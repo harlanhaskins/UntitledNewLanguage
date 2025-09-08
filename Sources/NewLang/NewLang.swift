@@ -23,6 +23,12 @@ struct Main {
             }
         }
 
+        // Check if user wants to see SSA demo
+        if inputFile.hasSuffix("--ssa-demo") {
+            runSSADemo()
+            return
+        }
+        
         do {
             let compiler = CompilerDriver()
             try await compiler.compile(inputFile: inputFile, outputFile: outputFile)

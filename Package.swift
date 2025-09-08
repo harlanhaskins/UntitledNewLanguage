@@ -14,7 +14,7 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         .executableTarget(
             name: "NewLang",
-            dependencies: ["CompilerDriver"]
+            dependencies: ["CompilerDriver", "SSA", "Lexer", "Parser", "TypeSystem"]
         ),
         .target(
             name: "Base",
@@ -50,6 +50,10 @@ let package = Package(
                 "Lexer", "Base", "AST", "Parser", "TypeSystem", "Types", "CodeGen",
                 .product(name: "Subprocess", package: "swift-subprocess")
             ]
+        ),
+        .target(
+            name: "SSA",
+            dependencies: ["Base", "Types", "AST"]
         )
     ]
 )
