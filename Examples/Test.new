@@ -1,0 +1,8 @@
+@extern(c)
+func printf(_ format: *Int8, ...)
+
+func addAndPrintNumbers(_ x: Int, _ y: Int) -> Int {
+    var result: Int = x + y
+    printf("%d", Int32(result))
+    return result
+}
