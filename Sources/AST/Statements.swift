@@ -1,6 +1,6 @@
-import Lexer
+import Base
 
-public struct Block: Statement {
+public final class Block: Statement {
     public let range: SourceRange
     public let statements: [any Statement]
     
@@ -14,7 +14,7 @@ public struct Block: Statement {
     }
 }
 
-public struct VarBinding: Statement {
+public final class VarBinding: Statement {
     public let range: SourceRange
     public let name: String
     public let type: (any TypeNode)?
@@ -32,13 +32,43 @@ public struct VarBinding: Statement {
     }
 }
 
-public struct ReturnStatement: Statement {
+public final class ReturnStatement: Statement {
     public let range: SourceRange
     public let value: (any Expression)?
     
     public init(range: SourceRange, value: (any Expression)? = nil) {
         self.range = range
         self.value = value
+    }
+    
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
+public final class AssignStatement: Statement {
+    public let range: SourceRange
+    public let name: String
+    public let value: any Expression
+    
+    public init(range: SourceRange, name: String, value: any Expression) {
+        self.range = range
+        self.name = name
+        self.value = value
+    }
+    
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
+public final class ExpressionStatement: Statement {
+    public let range: SourceRange
+    public let expression: any Expression
+    
+    public init(range: SourceRange, expression: any Expression) {
+        self.range = range
+        self.expression = expression
     }
     
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {

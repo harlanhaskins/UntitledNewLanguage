@@ -1,4 +1,4 @@
-public enum TokenKind: Equatable {
+public enum TokenKind: Equatable, Sendable {
     // Keywords
     case `func`
     case `var`

@@ -1,4 +1,5 @@
-import Lexer
+import Base
+import Types
 
 public protocol ASTNode {
     var range: SourceRange { get }
@@ -6,9 +7,13 @@ public protocol ASTNode {
 }
 
 public protocol Declaration: ASTNode {}
-public protocol Expression: ASTNode {}
+public protocol Expression: ASTNode {
+    var resolvedType: (any TypeProtocol)? { get }
+}
 public protocol Statement: ASTNode {}
-public protocol TypeNode: ASTNode {}
+public protocol TypeNode: ASTNode {
+    var resolvedType: (any TypeProtocol)? { get set }
+}
 
 public protocol ASTWalker {
     associatedtype Result
@@ -18,13 +23,16 @@ public protocol ASTWalker {
     func visit(_ node: ExternDeclaration) -> Result
     
     // Types
-    func visit(_ node: NominalType) -> Result
-    func visit(_ node: PointerType) -> Result
-    
+    func visit(_ node: NominalTypeNode) -> Result
+    func visit(_ node: PointerTypeNode) -> Result
+    func visit(_ node: EllipsisTypeNode) -> Result
+
     // Statements
     func visit(_ node: VarBinding) -> Result
+    func visit(_ node: AssignStatement) -> Result
     func visit(_ node: ReturnStatement) -> Result
     func visit(_ node: Block) -> Result
+    func visit(_ node: ExpressionStatement) -> Result
     
     // Expressions
     func visit(_ node: BinaryExpression) -> Result

@@ -1,4 +1,4 @@
-public struct SourceLocation: Equatable, CustomStringConvertible {
+public struct SourceLocation: Equatable, Sendable, CustomStringConvertible {
     public let line: Int
     public let column: Int
     public let offset: Int
@@ -14,7 +14,7 @@ public struct SourceLocation: Equatable, CustomStringConvertible {
     }
 }
 
-public struct SourceRange: Equatable, CustomStringConvertible {
+public struct SourceRange: Equatable, Sendable, CustomStringConvertible {
     public let start: SourceLocation
     public let end: SourceLocation
     
@@ -32,7 +32,7 @@ public struct SourceRange: Equatable, CustomStringConvertible {
     }
 }
 
-public struct Token: Equatable {
+public struct Token: Equatable, Sendable {
     public let kind: TokenKind
     public let range: SourceRange
     

@@ -3,6 +3,13 @@ func printf(_ format: *Int8, ...)
 
 func addAndPrintNumbers(_ x: Int, _ y: Int) -> Int {
     var result: Int = x + y
-    printf("%d", Int32(result))
+    var z = result
+    printf("%d\n", Int32(result))
     return result
+}
+
+func main() -> Int32 {
+    var x = addAndPrintNumbers(10, 20)
+    x = addAndPrintNumbers(5, 15)
+    return Int32(0)
 }

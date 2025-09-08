@@ -1,13 +1,21 @@
-import Lexer
+import Base
+import Types
 
-public struct FunctionDeclaration: Declaration {
+public final class FunctionDeclaration: Declaration {
     public let range: SourceRange
     public let name: String
     public let parameters: [Parameter]
     public let returnType: (any TypeNode)?
     public let body: Block?
     public let isExtern: Bool
-    
+
+    public var resolvedReturnType: (any TypeProtocol)? {
+        guard let returnType else {
+            return VoidType()
+        }
+        return returnType.resolvedType
+    }
+
     public init(range: SourceRange, name: String, parameters: [Parameter], returnType: (any TypeNode)? = nil, body: Block? = nil, isExtern: Bool = false) {
         self.range = range
         self.name = name
@@ -22,7 +30,7 @@ public struct FunctionDeclaration: Declaration {
     }
 }
 
-public struct ExternDeclaration: Declaration {
+public final class ExternDeclaration: Declaration {
     public let range: SourceRange
     public let callingConvention: String
     public let function: FunctionDeclaration
@@ -38,11 +46,11 @@ public struct ExternDeclaration: Declaration {
     }
 }
 
-public struct Parameter: ASTNode {
+public final class Parameter: ASTNode {
     public let range: SourceRange
     public let label: String?
     public let name: String
-    public let type: any TypeNode
+    public var type: any TypeNode
     public let isVariadic: Bool
     
     public init(range: SourceRange, label: String?, name: String, type: any TypeNode, isVariadic: Bool = false) {

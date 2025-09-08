@@ -1,3 +1,4 @@
+import Base
 import Foundation
 
 public final class Lexer {
