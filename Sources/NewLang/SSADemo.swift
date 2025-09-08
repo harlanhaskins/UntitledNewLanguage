@@ -49,6 +49,13 @@ public func runSSADemo() {
             print("\(SSAPrinter.printFunction(function))")
         }
         
+        print("=== C CODE GENERATION ===\n")
+        
+        // Lower SSA to C
+        for function in ssaFunctions {
+            print(SSAToCLowering.lowerFunction(function))
+        }
+        
     } catch {
         print("Failed to parse program: \(error)")
     }
