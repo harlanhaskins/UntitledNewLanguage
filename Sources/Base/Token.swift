@@ -4,11 +4,14 @@ public enum TokenKind: Equatable, Sendable {
     case `var`
     case `return`
     case `extern`
+    case `true`
+    case `false`
     
     // Literals
     case identifier(String)
     case integerLiteral(String)
     case stringLiteral(String)
+    case booleanLiteral(Bool)
     
     // Operators
     case plus        // +
@@ -18,6 +21,8 @@ public enum TokenKind: Equatable, Sendable {
     case modulo      // %
     case assign      // =
     case arrow       // ->
+    case logicalAnd  // &&
+    case logicalOr   // ||
     
     // Delimiters
     case leftParen   // (

@@ -1,0 +1,7 @@
+func main() -> Int32 {
+    return Int32(0)
+}
+
+func testBool(_ x: Bool) -> Bool {
+    return x && true
+}

@@ -1,0 +1,5 @@
+func testLocalVar(_ x: Int) -> Int {
+    var result: Int = x
+    result = result + 1  
+    return result
+}

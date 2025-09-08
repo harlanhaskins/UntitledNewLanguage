@@ -1,0 +1,13 @@
+func boolTest(_ a: Bool, _ b: Bool) -> Bool {
+    return a && b
+}
+
+func boolLogic(_ x: Bool) -> Bool {
+    var result: Bool = x || false
+    result = result && true
+    return result
+}
+
+func boolLiterals() -> Bool {
+    return true
+}

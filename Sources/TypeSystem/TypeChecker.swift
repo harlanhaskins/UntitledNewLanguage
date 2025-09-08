@@ -144,6 +144,7 @@ public final class TypeChecker: ASTWalker {
         case "Int": IntType()
         case "Int8": Int8Type()
         case "Int32": Int32Type()
+        case "Bool": BoolType()
         case "Void": VoidType()
         default: UnknownType()
         }
@@ -223,20 +224,30 @@ public final class TypeChecker: ASTWalker {
         
         var resultType: any TypeProtocol
         
-        // For arithmetic operations, both operands should be the same integer type
-        if !leftType.isSameType(as: rightType) {
-            diagnostics.typeMismatch(at: node.range, expected: leftType, actual: rightType)
-            resultType = UnknownType()
-        } else {
-            // Result type is the same as operand type for arithmetic
-            switch node.operator {
-            case .add, .subtract, .multiply, .divide, .modulo:
-                if leftType is IntType || leftType is Int8Type || leftType is Int32Type {
-                    resultType = leftType
-                } else {
-                    diagnostics.invalidOperation(at: node.range, operation: "\(node.operator)", type: leftType)
-                    resultType = UnknownType()
-                }
+        // Type checking based on operator type
+        switch node.operator {
+        case .add, .subtract, .multiply, .divide, .modulo:
+            // Arithmetic operations require same integer types
+            if !leftType.isSameType(as: rightType) {
+                diagnostics.typeMismatch(at: node.range, expected: leftType, actual: rightType)
+                resultType = UnknownType()
+            } else if leftType is IntType || leftType is Int8Type || leftType is Int32Type {
+                resultType = leftType
+            } else {
+                diagnostics.invalidOperation(at: node.range, operation: "\(node.operator)", type: leftType)
+                resultType = UnknownType()
+            }
+            
+        case .logicalAnd, .logicalOr:
+            // Logical operations require bool operands and result in bool
+            if !(leftType is BoolType) {
+                diagnostics.invalidOperation(at: node.left.range, operation: "\(node.operator)", type: leftType)
+                resultType = UnknownType()
+            } else if !(rightType is BoolType) {
+                diagnostics.invalidOperation(at: node.right.range, operation: "\(node.operator)", type: rightType)
+                resultType = UnknownType()
+            } else {
+                resultType = BoolType()
             }
         }
         
@@ -339,6 +350,8 @@ public final class TypeChecker: ASTWalker {
             resultType = IntType() // Default integer type
         case .string(_):
             resultType = PointerType(pointee: Int8Type()) // String literals are *Int8
+        case .boolean(_):
+            resultType = BoolType()
         }
         
         // Store resolved type in the AST node

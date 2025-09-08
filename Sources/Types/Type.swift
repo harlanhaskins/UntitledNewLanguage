@@ -119,6 +119,22 @@ public struct FunctionType: TypeProtocol {
     }
 }
 
+public struct BoolType: TypeProtocol {
+    public init() {}
+    
+    public func isSameType(as other: any TypeProtocol) -> Bool {
+        return other is BoolType
+    }
+    
+    public func isImplicitlyConvertible(to other: any TypeProtocol) -> Bool {
+        return other is BoolType
+    }
+    
+    public var isConcrete: Bool { true }
+    public var typeId: String { "Bool" }
+    public var description: String { "Bool" }
+}
+
 public struct VoidType: TypeProtocol {
     public init() {}
     

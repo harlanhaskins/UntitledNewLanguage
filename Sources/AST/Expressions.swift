@@ -3,6 +3,7 @@ import Types
 
 public enum BinaryOperator {
     case add, subtract, multiply, divide, modulo
+    case logicalAnd, logicalOr
 }
 
 public final class BinaryExpression: Expression {
@@ -80,6 +81,7 @@ public final class IdentifierExpression: Expression {
 public enum LiteralValue {
     case integer(String)
     case string(String)
+    case boolean(Bool)
 }
 
 public final class LiteralExpression: Expression {

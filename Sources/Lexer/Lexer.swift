@@ -66,6 +66,16 @@ public final class Lexer {
             return makeToken(.modulo, start: start)
         case "=":
             return makeToken(.assign, start: start)
+        case "&":
+            if match("&") {
+                return makeToken(.logicalAnd, start: start)
+            }
+            fatalError("Unexpected character: &")
+        case "|":
+            if match("|") {
+                return makeToken(.logicalOr, start: start)
+            }
+            fatalError("Unexpected character: |")
         case "\n":
             return makeToken(.newline, start: start)
         case ".":
@@ -136,6 +146,10 @@ public final class Lexer {
             kind = .return
         case "extern":
             kind = .extern
+        case "true":
+            kind = .booleanLiteral(true)
+        case "false":
+            kind = .booleanLiteral(false)
         default:
             kind = .identifier(text)
         }

@@ -48,6 +48,10 @@ public struct SSAToCLowering {
         var output = ""
         let nameMap = SSAValueToCNameMap()
         
+        // Add standard headers
+        output += "#include <stdbool.h>\n"
+        output += "#include <stdint.h>\n\n"
+        
         // Use entry block parameters instead of function parameters
         let entryBlockParams = function.blocks.first?.parameters ?? []
         
@@ -56,8 +60,8 @@ public struct SSAToCLowering {
             _ = nameMap.getTempName(for: param)
         }
         
-        // Function signature  
-        let returnTypeStr = formatCType(function.returnType)
+        // Function signature (handle main function specially)
+        let returnTypeStr = function.name == "main" ? "int" : formatCType(function.returnType)
         output += "\(returnTypeStr) \(function.name)("
         
         let paramStrs = entryBlockParams.map { param in
@@ -261,6 +265,8 @@ public struct SSAToCLowering {
             return "char"
         case is Int32Type:
             return "int32_t"
+        case is BoolType:
+            return "bool"
         case is VoidType:
             return "void"
         case let pointer as PointerType:
@@ -277,6 +283,8 @@ public struct SSAToCLowering {
         case .multiply: return "*"
         case .divide: return "/"
         case .modulo: return "%"
+        case .logicalAnd: return "&&"
+        case .logicalOr: return "||"
         }
     }
     
@@ -296,6 +304,8 @@ public struct SSAToCLowering {
                 return str
             case let .string(str):
                 return "\"\(str)\""
+            case let .boolean(value):
+                return value ? "true" : "false"
             }
         default:
             // Debug: print what we got
@@ -345,6 +355,8 @@ public struct SSAToCLowering {
         case .multiply: return "integer_mul"
         case .divide: return "integer_div"
         case .modulo: return "integer_mod"
+        case .logicalAnd: return "logical_and"
+        case .logicalOr: return "logical_or"
         }
     }
 }

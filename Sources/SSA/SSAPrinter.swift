@@ -164,6 +164,8 @@ public struct SSAPrinter {
         case .multiply: return "integer_mul"
         case .divide: return "integer_div"
         case .modulo: return "integer_mod"
+        case .logicalAnd: return "logical_and"
+        case .logicalOr: return "logical_or"
         }
     }
 }

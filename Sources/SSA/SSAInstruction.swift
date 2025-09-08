@@ -10,6 +10,7 @@ public protocol SSAInstruction {
 public final class BinaryOp: SSAInstruction {
     public enum Operator: String {
         case add, subtract, multiply, divide, modulo
+        case logicalAnd, logicalOr
     }
     
     public let `operator`: Operator

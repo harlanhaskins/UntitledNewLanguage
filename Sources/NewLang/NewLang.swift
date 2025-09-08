@@ -14,7 +14,7 @@ struct Main {
             // Get the path to Test.new relative to this file
             let currentFile = #filePath
             let currentDir = URL(fileURLWithPath: currentFile).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            inputFile = currentDir.appendingPathComponent("Examples/Test.new").path
+            inputFile = currentDir.appendingPathComponent("Examples/Test.newlang").path
             outputFile = "test_program"
         } else {
             inputFile = args[1]

@@ -1,0 +1,7 @@
+func add(_ x: Int, _ y: Int) -> Int {
+    return x + y
+}
+
+func main() -> Int {
+    return add(5, 3)
+}

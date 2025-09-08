@@ -314,7 +314,31 @@ public final class Parser {
     // MARK: - Expressions
     
     private func parseExpression() throws -> any Expression {
-        return try parseAddition()
+        return try parseLogicalOr()
+    }
+    
+    private func parseLogicalOr() throws -> any Expression {
+        var expr = try parseLogicalAnd()
+        
+        while match(.logicalOr) {
+            let right = try parseLogicalAnd()
+            let range = SourceRange(start: expr.range.start, end: right.range.end)
+            expr = BinaryExpression(range: range, left: expr, operator: .logicalOr, right: right)
+        }
+        
+        return expr
+    }
+    
+    private func parseLogicalAnd() throws -> any Expression {
+        var expr = try parseAddition()
+        
+        while match(.logicalAnd) {
+            let right = try parseAddition()
+            let range = SourceRange(start: expr.range.start, end: right.range.end)
+            expr = BinaryExpression(range: range, left: expr, operator: .logicalAnd, right: right)
+        }
+        
+        return expr
     }
     
     private func parseAddition() throws -> any Expression {
@@ -391,6 +415,11 @@ public final class Parser {
         if case .stringLiteral(let value) = peek().kind {
             let token = advance()
             return LiteralExpression(range: token.range, value: .string(value))
+        }
+        
+        if case .booleanLiteral(let value) = peek().kind {
+            let token = advance()
+            return LiteralExpression(range: token.range, value: .boolean(value))
         }
         
         throw ParseError.unexpectedToken(peek())

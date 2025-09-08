@@ -2,7 +2,7 @@ import Foundation
 import Lexer
 import Parser  
 import TypeSystem
-import CodeGen
+import SSA
 import Subprocess
 
 public final class CompilerDriver {
@@ -41,20 +41,28 @@ public final class CompilerDriver {
             throw CompilerError.typeCheckingFailed
         }
         
-        // Step 5: Generate C code
-        print("Generating C code...")
-        let codeGenerator = CCodeGenerator()
-        let cCode = codeGenerator.generate(declarations: ast)
+        // Step 5: Lower AST to SSA
+        print("Lowering to SSA...")
+        let ssaBuilder = SSABuilder()
+        let ssaFunctions = ssaBuilder.lower(declarations: ast)
         
-        // Step 6: Write C code to temporary file
+        // Step 6: Generate C code from SSA
+        print("Generating C code...")
+        var cCode = ""
+        for function in ssaFunctions {
+            cCode += SSAToCLowering.lowerFunction(function)
+            cCode += "\n"
+        }
+        
+        // Step 7: Write C code to temporary file
         let tempCFile = "/tmp/\(UUID().uuidString).c"
         try cCode.write(toFile: tempCFile, atomically: true, encoding: String.Encoding.utf8)
         
-        // Step 7: Compile C code with clang
+        // Step 8: Compile C code with clang
         print("Compiling to executable...")
         try await compileWithClang(cFile: tempCFile, outputFile: finalOutputFile)
         
-        // Step 8: Clean up temp file
+        // Step 9: Clean up temp file
         try FileManager.default.removeItem(atPath: tempCFile)
         
         print("✅ Compilation successful! Output: \(finalOutputFile)")

@@ -174,9 +174,11 @@ public final class SSABuilder {
         case .multiply: op = .multiply
         case .divide: op = .divide
         case .modulo: op = .modulo
+        case .logicalAnd: op = .logicalAnd
+        case .logicalOr: op = .logicalOr
         }
         
-        let resultType = binary.resolvedType ?? IntType()
+        let resultType = binary.resolvedType ?? (op == .logicalAnd || op == .logicalOr ? BoolType() : IntType())
         let binaryInst = BinaryOp(operator: op, left: left, right: right, result: nil)
         let result = InstructionResult(type: resultType, instruction: binaryInst)
         let binaryWithResult = BinaryOp(operator: op, left: left, right: right, result: result)

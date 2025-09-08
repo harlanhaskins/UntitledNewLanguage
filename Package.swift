@@ -41,13 +41,9 @@ let package = Package(
             dependencies: ["Base", "AST", "Types"]
         ),
         .target(
-            name: "CodeGen",
-            dependencies: ["Base", "AST", "Types"]
-        ),
-        .target(
             name: "CompilerDriver", 
             dependencies: [
-                "Lexer", "Base", "AST", "Parser", "TypeSystem", "Types", "CodeGen",
+                "Lexer", "Base", "AST", "Parser", "TypeSystem", "Types", "SSA",
                 .product(name: "Subprocess", package: "swift-subprocess")
             ]
         ),
