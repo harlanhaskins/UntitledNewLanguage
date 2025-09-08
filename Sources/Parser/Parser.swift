@@ -409,17 +409,17 @@ public final class Parser {
         
         if case .integerLiteral(let value) = peek().kind {
             let token = advance()
-            return LiteralExpression(range: token.range, value: .integer(value))
+            return IntegerLiteralExpression(range: token.range, value: value)
         }
         
         if case .stringLiteral(let value) = peek().kind {
             let token = advance()
-            return LiteralExpression(range: token.range, value: .string(value))
+            return StringLiteralExpression(range: token.range, value: value)
         }
         
         if case .booleanLiteral(let value) = peek().kind {
             let token = advance()
-            return LiteralExpression(range: token.range, value: .boolean(value))
+            return BooleanLiteralExpression(range: token.range, value: value)
         }
         
         throw ParseError.unexpectedToken(peek())

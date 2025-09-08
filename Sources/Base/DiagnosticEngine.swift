@@ -1,6 +1,3 @@
-import Base
-import Types
-
 /// Severity levels for diagnostics
 public enum DiagnosticSeverity {
     case error
@@ -109,36 +106,40 @@ public final class DiagnosticEngine {
     }
 }
 
-// MARK: - Type Checking Diagnostic Extensions
+// MARK: - SSA Analysis Diagnostic Extensions
+
+/// Enum for unused variable kinds
+public enum UnusedVariableKind {
+    case uninitialized
+    case writeOnly(storeCount: Int)
+}
 
 extension DiagnosticEngine {
-    /// Type checking specific diagnostic methods
+    /// SSA analysis specific diagnostic methods
     
-    public func typeMismatch(at range: SourceRange, expected: any TypeProtocol, actual: any TypeProtocol) {
-        error(at: range, message: "type mismatch - expected '\(expected)', got '\(actual)'", category: "type-checker")
+    public func unusedVariable(function: String, type: String, kind: UnusedVariableKind) {
+        let defaultRange = SourceRange(start: SourceLocation(line: 0, column: 0, offset: 0), end: SourceLocation(line: 0, column: 0, offset: 0))
+        
+        switch kind {
+        case .uninitialized:
+            warning(at: defaultRange, message: "unused variable of type '\(type)' in function '\(function)' (allocated but never used)", category: "ssa-analysis")
+        case .writeOnly(let storeCount):
+            warning(at: defaultRange, message: "unused variable of type '\(type)' in function '\(function)' (written \(storeCount) time\(storeCount == 1 ? "" : "s") but never read)", category: "ssa-analysis")
+        }
     }
     
-    public func unknownType(at range: SourceRange, name: String) {
-        error(at: range, message: "unknown type '\(name)'", category: "type-checker")
-    }
-    
-    public func undefinedVariable(at range: SourceRange, name: String) {
-        error(at: range, message: "undefined variable '\(name)'", category: "type-checker")
-    }
-    
-    public func argumentCountMismatch(at range: SourceRange, expected: Int, actual: Int) {
-        error(at: range, message: "argument count mismatch - expected \(expected), got \(actual)", category: "type-checker")
-    }
-    
-    public func notCallable(at range: SourceRange, type: any TypeProtocol) {
-        error(at: range, message: "type '\(type)' is not callable", category: "type-checker")
-    }
-    
-    public func invalidOperation(at range: SourceRange, operation: String, type: any TypeProtocol) {
-        error(at: range, message: "invalid operation '\(operation)' on type '\(type)'", category: "type-checker")
-    }
-    
-    public func variadicArgumentType(at range: SourceRange, type: any TypeProtocol) {
-        note(at: range, message: "variadic argument of type '\(type)'", category: "type-checker")
+    public func unusedVariableSummary(function: String, totalUnused: Int, uninitialized: Int, writeOnly: Int) {
+        let defaultRange = SourceRange(start: SourceLocation(line: 0, column: 0, offset: 0), end: SourceLocation(line: 0, column: 0, offset: 0))
+        
+        var summary = "Function '\(function)': \(totalUnused) unused variable\(totalUnused == 1 ? "" : "s")"
+        if uninitialized > 0 && writeOnly > 0 {
+            summary += " (\(uninitialized) uninitialized, \(writeOnly) write-only)"
+        } else if uninitialized > 0 {
+            summary += " (all uninitialized)"
+        } else if writeOnly > 0 {
+            summary += " (all write-only)"
+        }
+        
+        note(at: defaultRange, message: summary, category: "ssa-analysis")
     }
 }

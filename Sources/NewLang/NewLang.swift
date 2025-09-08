@@ -1,40 +1,86 @@
 import Foundation
 import CompilerDriver
+import ArgumentParser
 
 @main
-struct Main {
-    static func main() async {
-        let args = CommandLine.arguments
-
-        // If no arguments provided, use the default test file
-        let inputFile: String
-        var outputFile: String?
-
-        if args.count < 2 {
-            // Get the path to Test.new relative to this file
-            let currentFile = #filePath
-            let currentDir = URL(fileURLWithPath: currentFile).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            inputFile = currentDir.appendingPathComponent("Examples/Test.newlang").path
-            outputFile = "test_program"
-        } else {
-            inputFile = args[1]
-            if args.count > 2 {
-                outputFile = args[2]
-            }
+struct NewLangCompiler: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "newlang",
+        abstract: "The NewLang programming language compiler",
+        discussion: """
+            NewLang is a statically typed programming language that compiles to C.
+            This compiler supports boolean operations, integer arithmetic, and function declarations.
+            """,
+        version: "0.1.0"
+    )
+    
+    @Argument(help: "The source file to compile (.nl extension)")
+    var inputFile: String
+    
+    @Option(name: .shortAndLong, help: "The output executable file")
+    var output: String?
+    
+    @Flag(name: .shortAndLong, help: "Enable verbose output")
+    var verbose: Bool = false
+    
+    @Flag(help: "Skip SSA analysis passes")
+    var skipAnalysis: Bool = false
+    
+    @Flag(help: "Only run analysis passes without generating executable")
+    var analyzeOnly: Bool = false
+    
+    func validate() throws {
+        // Check if input file exists
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: inputFile) {
+            throw ValidationError("Input file '\(inputFile)' does not exist.")
         }
-
-        // Check if user wants to see SSA demo
-        if inputFile.hasSuffix("--ssa-demo") {
-            runSSADemo()
-            return
+    }
+    
+    func run() async throws {
+        let inputURL = URL(filePath: inputFile)
+        let outputURL: URL?
+        
+        if let output = output {
+            outputURL = URL(filePath: output)
+        } else {
+            // Default output: same name as input but without extension
+            outputURL = inputURL.deletingPathExtension()
+        }
+        
+        if verbose {
+            print("NewLang Compiler v\(Self.configuration.version)")
+            print("Input: \(inputFile)")
+            if let outputURL = outputURL {
+                print("Output: \(outputURL.path)")
+            }
+            print("Options:")
+            print("  - Verbose: \(verbose)")
+            print("  - Skip Analysis: \(skipAnalysis)")
+            print("  - Analyze Only: \(analyzeOnly)")
+            print()
         }
         
         do {
-            let compiler = CompilerDriver()
-            try await compiler.compile(inputFile: inputFile, outputFile: outputFile)
+            let compilerOptions = CompilerOptions(
+                verbose: verbose,
+                skipAnalysis: skipAnalysis,
+                analyzeOnly: analyzeOnly
+            )
+            let compiler = CompilerDriver(options: compilerOptions)
+            try await compiler.compile(inputFile: inputURL, outputFile: outputURL)
+            
+            if verbose {
+                print("\n✅ Compilation completed successfully!")
+            }
         } catch {
-            print("Compilation failed: \(error)")
-            exit(1)
+            if verbose {
+                print("\n❌ Compilation failed with error:")
+                print(error)
+            } else {
+                print("Compilation failed: \(error)")
+            }
+            throw ExitCode.failure
         }
     }
 }

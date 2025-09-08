@@ -39,7 +39,9 @@ public protocol ASTWalker {
     func visit(_ node: CallExpression) -> Result
     func visit(_ node: CastExpression) -> Result
     func visit(_ node: IdentifierExpression) -> Result
-    func visit(_ node: LiteralExpression) -> Result
+    func visit(_ node: IntegerLiteralExpression) -> Result
+    func visit(_ node: StringLiteralExpression) -> Result
+    func visit(_ node: BooleanLiteralExpression) -> Result
     
     // Parameters
     func visit(_ node: Parameter) -> Result

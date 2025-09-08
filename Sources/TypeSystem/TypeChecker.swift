@@ -1,4 +1,5 @@
 import AST
+import Base
 import Types
 
 /// Environment for type checking - tracks variables and their types
@@ -343,18 +344,20 @@ public final class TypeChecker: ASTWalker {
         return resultType
     }
     
-    public func visit(_ node: LiteralExpression) -> any TypeProtocol {
-        let resultType: any TypeProtocol
-        switch node.value {
-        case .integer(_):
-            resultType = IntType() // Default integer type
-        case .string(_):
-            resultType = PointerType(pointee: Int8Type()) // String literals are *Int8
-        case .boolean(_):
-            resultType = BoolType()
-        }
-        
-        // Store resolved type in the AST node
+    public func visit(_ node: IntegerLiteralExpression) -> any TypeProtocol {
+        let resultType = IntType()
+        node.resolvedType = resultType
+        return resultType
+    }
+    
+    public func visit(_ node: StringLiteralExpression) -> any TypeProtocol {
+        let resultType = PointerType(pointee: Int8Type()) // String literals are *Int8
+        node.resolvedType = resultType
+        return resultType
+    }
+    
+    public func visit(_ node: BooleanLiteralExpression) -> any TypeProtocol {
+        let resultType = BoolType()
         node.resolvedType = resultType
         return resultType
     }

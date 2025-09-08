@@ -1,3 +1,4 @@
+import Base
 import Foundation
 import Lexer
 import Parser  
@@ -5,31 +6,52 @@ import TypeSystem
 import SSA
 import Subprocess
 
-public final class CompilerDriver {
-    public init() {}
+/// Configuration options for the compiler
+public struct CompilerOptions {
+    public let verbose: Bool
+    public let skipAnalysis: Bool
+    public let analyzeOnly: Bool
     
-    public func compile(inputFile: String, outputFile: String? = nil) async throws {
-        print("=== NEWLANG COMPILER ===")
+    public init(verbose: Bool = false, skipAnalysis: Bool = false, analyzeOnly: Bool = false) {
+        self.verbose = verbose
+        self.skipAnalysis = skipAnalysis
+        self.analyzeOnly = analyzeOnly
+    }
+}
+
+public final class CompilerDriver {
+    private let options: CompilerOptions
+    
+    public init(options: CompilerOptions = CompilerOptions()) {
+        self.options = options
+    }
+    
+    public func compile(inputFile: URL, outputFile: URL? = nil) async throws {
+        if !options.verbose {
+            print("=== NEWLANG COMPILER ===")
+        }
         
         // Determine output file name
-        let finalOutputFile = outputFile ?? inputFile.replacingOccurrences(of: ".new", with: "")
-        
+        let finalOutputFile = outputFile ?? inputFile.deletingPathExtension()
+
         // Step 1: Read source code
-        let sourceCode = try String(contentsOfFile: inputFile, encoding: .utf8)
-        print("Compiling: \(inputFile)")
+        let sourceCode = try String(contentsOf: inputFile, encoding: .utf8)
+        if options.verbose {
+            print("Reading source file: \(inputFile.path)")
+        }
         
         // Step 2: Lex the source code
-        print("Lexing...")
+        if options.verbose { print("Step 2: Lexical analysis") }
         let lexer = Lexer(source: sourceCode)
         let tokens = lexer.tokenize()
         
         // Step 3: Parse the tokens
-        print("Parsing...")
+        if options.verbose { print("Step 3: Parsing") }
         let parser = Parser(tokens: tokens)
         let ast = try parser.parse()
         
         // Step 4: Type check the AST
-        print("Type checking...")
+        if options.verbose { print("Step 4: Type checking") }
         let diagnostics = DiagnosticEngine()
         let typeChecker = TypeChecker(diagnostics: diagnostics)
         typeChecker.typeCheck(declarations: ast)
@@ -42,38 +64,91 @@ public final class CompilerDriver {
         }
         
         // Step 5: Lower AST to SSA
-        print("Lowering to SSA...")
+        if options.verbose { print("Step 5: Lowering to SSA") }
         let ssaBuilder = SSABuilder()
-        let ssaFunctions = ssaBuilder.lower(declarations: ast)
+        var ssaFunctions = ssaBuilder.lower(declarations: ast)
+        
+        // Step 5a: Run SSA passes for analysis and optimization
+        if !options.skipAnalysis {
+            if options.verbose { print("Step 5a: Running SSA analysis passes") }
+            
+            let passManager = SSAFunctionPassManager()
+            let ssaDiagnostics = DiagnosticEngine()
+            
+            // Run unused variable analysis pass
+            let unusedVarPass = UnusedVariableFunctionPass()
+            passManager.runAnalysisOnAllFunctions(unusedVarPass, on: &ssaFunctions, diagnostics: ssaDiagnostics)
+            
+            // Run dead code elimination pass
+            let deadCodePass = DeadCodeEliminationPass()
+            passManager.runTransformOnAllFunctions(deadCodePass, on: &ssaFunctions)
+            
+            // Report analysis results
+            if ssaDiagnostics.hasWarnings {
+                for warning in ssaDiagnostics.warnings {
+                    print("Warning: \(warning.message)")
+                }
+                for note in ssaDiagnostics.allDiagnostics.filter({ $0.severity == .note }) {
+                    print("Note: \(note.message)")
+                }
+            } else {
+                print("✅ No unused variables detected.")
+            }
+        }
+        
+        // If analyze-only mode, stop here
+        if options.analyzeOnly {
+            if options.verbose { print("Analysis complete. Skipping code generation.") }
+            return
+        }
         
         // Step 6: Generate C code from SSA
-        print("Generating C code...")
-        var cCode = ""
+        if options.verbose { print("Step 6: Generating C code") }
+        
+        // Generate extern declarations and headers first
+        var cCode = SSAToCLowering.generateExternDeclarations(ast)
+        
+        // Generate function definitions
         for function in ssaFunctions {
             cCode += SSAToCLowering.lowerFunction(function)
             cCode += "\n"
         }
         
+        if options.verbose {
+            print("Generated C code")
+            print(cCode)
+        }
+        
         // Step 7: Write C code to temporary file
-        let tempCFile = "/tmp/\(UUID().uuidString).c"
-        try cCode.write(toFile: tempCFile, atomically: true, encoding: String.Encoding.utf8)
+        let tempCFile = URL(filePath: "/tmp/\(UUID().uuidString).c")
+        try cCode.write(to: tempCFile, atomically: true, encoding: String.Encoding.utf8)
+        
+        if options.verbose {
+            print("Step 7: Writing temporary C file to \(tempCFile.path)")
+        }
         
         // Step 8: Compile C code with clang
-        print("Compiling to executable...")
+        if options.verbose { print("Step 8: Compiling C to executable") }
+        else { print("Compiling to executable...") }
         try await compileWithClang(cFile: tempCFile, outputFile: finalOutputFile)
         
         // Step 9: Clean up temp file
-        try FileManager.default.removeItem(atPath: tempCFile)
+        try FileManager.default.removeItem(at: tempCFile)
         
-        print("✅ Compilation successful! Output: \(finalOutputFile)")
+        if options.verbose {
+            print("Step 9: Cleaned up temporary files")
+            print("✅ Compilation successful! Output: \(finalOutputFile.path)")
+        } else {
+            print("✅ Compilation successful! Output: \(finalOutputFile.path)")
+        }
     }
     
-    private func compileWithClang(cFile: String, outputFile: String) async throws {
+    private func compileWithClang(cFile: URL, outputFile: URL) async throws {
         let result = try await Subprocess.run(
             .name("clang"),
             arguments: [
-                "-o", outputFile,
-                cFile,
+                "-o", outputFile.path,
+                cFile.path,
                 "-std=c99",
                 "-Wall"
             ],

@@ -150,8 +150,12 @@ public final class SSABuilder {
             return lowerCastExpression(cast)
         case let identifier as IdentifierExpression:
             return lowerIdentifierExpression(identifier)
-        case let literal as LiteralExpression:
-            return lowerLiteralExpression(literal)
+        case let intLiteral as IntegerLiteralExpression:
+            return lowerIntegerLiteral(intLiteral)
+        case let stringLiteral as StringLiteralExpression:
+            return lowerStringLiteral(stringLiteral)  
+        case let boolLiteral as BooleanLiteralExpression:
+            return lowerBooleanLiteral(boolLiteral)
         default:
             // Fallback - create unknown constant
             return ConstantValue(type: UnknownType(), value: "unknown")
@@ -194,22 +198,66 @@ public final class SSABuilder {
         }
         
         let funcName = (call.function as? IdentifierExpression)?.name ?? "unknown"
-        let arguments = call.arguments.map { lowerExpression($0) }
-        
         let resultType = call.resolvedType ?? VoidType()
         
-        if resultType is VoidType {
-            // Void function call
-            let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
-            currentBlock.add(callInst)
-            return ConstantValue(type: VoidType(), value: ())
-        } else {
-            // Non-void function call
-            let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
-            let result = InstructionResult(type: resultType, instruction: callInst)
-            let callWithResult = CallInst(function: funcName, arguments: arguments, result: result)
-            currentBlock.add(callWithResult)
+        // Check if this is actually a type cast (type constructor call)
+        if isTypeCast(call) {
+            // This is a type cast, not a function call
+            guard call.arguments.count == 1 else {
+                return ConstantValue(type: UnknownType(), value: "error")
+            }
+            
+            let value = lowerExpression(call.arguments[0])
+            let castInst = CastInst(value: value, targetType: resultType, result: nil)
+            let result = InstructionResult(type: resultType, instruction: castInst)
+            let castWithResult = CastInst(value: value, targetType: resultType, result: result)
+            currentBlock.add(castWithResult)
             return result
+        } else {
+            // This is a regular function call
+            let arguments = call.arguments.map { lowerExpression($0) }
+            
+            if resultType is VoidType {
+                // Void function call
+                let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
+                currentBlock.add(callInst)
+                return ConstantValue(type: VoidType(), value: ())
+            } else {
+                // Non-void function call
+                let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
+                let result = InstructionResult(type: resultType, instruction: callInst)
+                let callWithResult = CallInst(function: funcName, arguments: arguments, result: result)
+                currentBlock.add(callWithResult)
+                return result
+            }
+        }
+    }
+    
+    /// Check if a call expression is actually a type cast
+    private func isTypeCast(_ call: CallExpression) -> Bool {
+        // A type cast is a call where:
+        // 1. The function is a type name (Int32, Int, Bool, etc.)
+        // 2. It has exactly one argument
+        // 3. The resolved type matches the function name
+        guard let identifierExpr = call.function as? IdentifierExpression,
+              call.arguments.count == 1,
+              let resultType = call.resolvedType else {
+            return false
+        }
+        
+        // Check if the function name corresponds to a built-in type
+        let typeName = identifierExpr.name
+        switch typeName {
+        case "Int":
+            return resultType is IntType
+        case "Int8":
+            return resultType is Int8Type
+        case "Int32":
+            return resultType is Int32Type
+        case "Bool":
+            return resultType is BoolType
+        default:
+            return false
         }
     }
     
@@ -257,9 +305,21 @@ public final class SSABuilder {
         }
     }
     
-    /// Lower a literal expression
-    private func lowerLiteralExpression(_ literal: LiteralExpression) -> any SSAValue {
+    /// Lower an integer literal expression
+    private func lowerIntegerLiteral(_ literal: IntegerLiteralExpression) -> any SSAValue {
         let type = literal.resolvedType ?? IntType()
+        return ConstantValue(type: type, value: literal.value)
+    }
+    
+    /// Lower a string literal expression  
+    private func lowerStringLiteral(_ literal: StringLiteralExpression) -> any SSAValue {
+        let type = literal.resolvedType ?? PointerType(pointee: Int8Type())
+        return ConstantValue(type: type, value: literal.value)
+    }
+    
+    /// Lower a boolean literal expression
+    private func lowerBooleanLiteral(_ literal: BooleanLiteralExpression) -> any SSAValue {
+        let type = literal.resolvedType ?? BoolType()
         return ConstantValue(type: type, value: literal.value)
     }
 }

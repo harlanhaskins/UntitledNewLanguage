@@ -78,18 +78,44 @@ public final class IdentifierExpression: Expression {
     }
 }
 
-public enum LiteralValue {
-    case integer(String)
-    case string(String)
-    case boolean(Bool)
-}
-
-public final class LiteralExpression: Expression {
+public final class IntegerLiteralExpression: Expression {
     public let range: SourceRange
-    public let value: LiteralValue
+    public let value: String
     public var resolvedType: (any TypeProtocol)?
     
-    public init(range: SourceRange, value: LiteralValue) {
+    public init(range: SourceRange, value: String) {
+        self.range = range
+        self.value = value
+        self.resolvedType = nil
+    }
+    
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
+public final class StringLiteralExpression: Expression {
+    public let range: SourceRange
+    public let value: String
+    public var resolvedType: (any TypeProtocol)?
+    
+    public init(range: SourceRange, value: String) {
+        self.range = range
+        self.value = value
+        self.resolvedType = nil
+    }
+    
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
+public final class BooleanLiteralExpression: Expression {
+    public let range: SourceRange
+    public let value: Bool
+    public var resolvedType: (any TypeProtocol)?
+    
+    public init(range: SourceRange, value: Bool) {
         self.range = range
         self.value = value
         self.resolvedType = nil

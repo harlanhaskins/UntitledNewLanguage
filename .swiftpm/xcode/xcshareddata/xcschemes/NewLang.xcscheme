@@ -52,7 +52,11 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "--ssa-demo"
+            argument = "/Users/harlan/Developer/NewLang/Examples/Test.newlang"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--verbose"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>

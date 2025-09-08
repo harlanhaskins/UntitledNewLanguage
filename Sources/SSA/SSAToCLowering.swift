@@ -44,13 +44,57 @@ private final class SSAValueToCNameMap {
 /// Lowers SSA functions to C code
 public struct SSAToCLowering {
     
-    public static func lowerFunction(_ function: SSAFunction) -> String {
+    /// Generate C code for extern function declarations
+    public static func generateExternDeclarations(_ declarations: [any Declaration]) -> String {
         var output = ""
-        let nameMap = SSAValueToCNameMap()
         
         // Add standard headers
         output += "#include <stdbool.h>\n"
-        output += "#include <stdint.h>\n\n"
+        output += "#include <stdint.h>\n"
+        
+        // Generate extern function declarations
+        var hasExterns = false
+        for declaration in declarations {
+            if let externDecl = declaration as? ExternDeclaration {
+                if !hasExterns {
+                    output += "\n// External function declarations\n"
+                    hasExterns = true
+                }
+                output += generateExternFunctionDeclaration(externDecl.function)
+            }
+        }
+        
+        if hasExterns {
+            output += "\n"
+        }
+        
+        return output
+    }
+    
+    /// Generate a C declaration for an extern function
+    private static func generateExternFunctionDeclaration(_ function: FunctionDeclaration) -> String {
+        let returnTypeStr = formatCType(function.resolvedReturnType ?? VoidType())
+        var output = "extern \(returnTypeStr) \(function.name)("
+        
+        var paramStrs: [String] = []
+        for param in function.parameters {
+            if param.isVariadic {
+                paramStrs.append("...")
+            } else {
+                let paramType = formatCType(param.type.resolvedType ?? VoidType())
+                paramStrs.append(paramType)
+            }
+        }
+        
+        output += paramStrs.joined(separator: ", ")
+        output += ");\n"
+        
+        return output
+    }
+    
+    public static func lowerFunction(_ function: SSAFunction) -> String {
+        var output = ""
+        let nameMap = SSAValueToCNameMap()
         
         // Use entry block parameters instead of function parameters
         let entryBlockParams = function.blocks.first?.parameters ?? []
@@ -297,15 +341,15 @@ public struct SSAToCLowering {
         case let doubleVal as Double:
             return "\(doubleVal)"
         case let boolVal as Bool:
-            return boolVal ? "1" : "0"
-        case let literal as LiteralValue:
-            switch literal {
-            case let .integer(str):
-                return str
-            case let .string(str):
-                return "\"\(str)\""
-            case let .boolean(value):
-                return value ? "true" : "false"
+            return boolVal ? "true" : "false"
+        case let stringVal as String:
+            // Check if this is a string literal or an integer literal
+            if constant.type is PointerType {
+                // This is a string literal, wrap in quotes
+                return "\"\(stringVal)\""
+            } else {
+                // This is an integer literal stored as string
+                return stringVal
             }
         default:
             // Debug: print what we got
