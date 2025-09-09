@@ -40,4 +40,20 @@ public extension DiagnosticEngine {
     func typeMismatch(at range: SourceRange, expected: any TypeProtocol, actual: any TypeProtocol) {
         error(at: range, message: "type mismatch - expected '\(expected)', got '\(actual)'", category: "type-checker")
     }
+
+    func missingInitializer(at range: SourceRange, name: String) {
+        error(at: range, message: "variable '\(name)' requires an initializer", category: "type-checker")
+    }
+
+    func missingFieldType(at range: SourceRange, name: String) {
+        error(at: range, message: "field '\(name)' requires an explicit type", category: "type-checker")
+    }
+
+    func invalidMemberAccess(at range: SourceRange, type: any TypeProtocol) {
+        error(at: range, message: "type '\(type)' has no members", category: "type-checker")
+    }
+
+    func unknownMember(at range: SourceRange, type: any TypeProtocol, member: String) {
+        error(at: range, message: "type '\(type)' has no member '\(member)'", category: "type-checker")
+    }
 }

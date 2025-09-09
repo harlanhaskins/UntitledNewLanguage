@@ -2,8 +2,8 @@ import Types
 
 /// Maps SSA values to their dynamic names
 public final class ValueNameMap {
+    var uniqueNames = UniqueNameMap()
     private var valueToName: [ObjectIdentifier: String] = [:]
-    private var nextValueNumber = 0
 
     public init() {}
 
@@ -14,9 +14,20 @@ public final class ValueNameMap {
             return existing
         }
 
+        var userProvidedName: String?
+        if let result = value as? InstructionResult,
+           let alloca = result.instruction as? AllocaInst {
+            userProvidedName = alloca.userProvidedName
+        }
+
         // All SSA values get sequential numbering
-        let name = "%\(nextValueNumber)"
-        nextValueNumber += 1
+        let baseName = userProvidedName ?? ""
+        var resolved = uniqueNames.next(for: baseName)
+        if resolved.isEmpty {
+            resolved = "0"
+        }
+
+        let name = "%\(resolved)"
 
         valueToName[id] = name
         return name

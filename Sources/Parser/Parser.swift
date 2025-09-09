@@ -27,6 +27,10 @@ public final class Parser {
             return try parseExternDeclaration()
         }
 
+        if match(.struct) {
+            return try parseStructDeclaration()
+        }
+
         if match(.func) {
             return try parseFunctionDeclaration()
         }
@@ -251,8 +255,8 @@ public final class Parser {
             return try parseIfStatement()
         }
 
-        // Check for assignment: identifier = expression
-        if isIdentifier(), checkAhead(.assign) {
+        // Check for assignment: identifier (= or .memberChain =)
+        if isIdentifier(), (checkAhead(.assign) || isMemberAssignAhead()) {
             return try parseAssignStatement()
         }
 
@@ -263,7 +267,7 @@ public final class Parser {
         return ExpressionStatement(range: range, expression: expr)
     }
 
-    private func parseVarBinding() throws -> VarBinding {
+    private func parseVarBinding(allowOptionalInitializer: Bool = false) throws -> VarBinding {
         let start = previous().range.start
 
         guard case let .identifier(name) = peek().kind else {
@@ -276,29 +280,89 @@ public final class Parser {
             type = try parseType()
         }
 
-        try consume(.assign, "Expected '=' in variable binding")
+        var value: (any Expression)? = nil
+        if match(.assign) {
+            value = try parseExpression()
+        } else if !(allowOptionalInitializer || type != nil) {
+            throw ParseError.expectedToken(.assign, peek(), "Expected '=' in variable binding")
+        }
 
-        let value = try parseExpression()
-
-        let range = SourceRange(start: start, end: value.range.end)
+        let endLoc = value?.range.end ?? previous().range.end
+        let range = SourceRange(start: start, end: endLoc)
 
         return VarBinding(range: range, name: name, type: type, value: value)
     }
 
-    private func parseAssignStatement() throws -> AssignStatement {
+    private func parseStructDeclaration() throws -> StructDeclaration {
+        let start = previous().range.start
+
+        // Expect struct name
         guard case let .identifier(name) = peek().kind else {
+            throw ParseError.expectedIdentifier(peek())
+        }
+        advance()
+
+        try consume(.leftBrace, "Expected '{' after struct name")
+
+        var fields: [VarBinding] = []
+        while !check(.rightBrace) && !isAtEnd() {
+            try consume(.var, "Expected 'var' in struct body")
+            let field = try parseVarBinding(allowOptionalInitializer: true)
+            fields.append(field)
+        }
+
+        let endToken = try consume(.rightBrace, "Expected '}' after struct body")
+        let range = SourceRange(start: start, end: endToken.range.end)
+
+        return StructDeclaration(range: range, name: name, fields: fields)
+    }
+
+    private func parseAssignStatement() throws -> any Statement {
+        guard case let .identifier(baseName) = peek().kind else {
             throw ParseError.expectedIdentifier(peek())
         }
         let nameToken = advance()
         let start = nameToken.range.start
 
+        // Parse optional member path
+        var path: [String] = []
+        while match(.dot) {
+            guard case let .identifier(member) = peek().kind else {
+                throw ParseError.expectedIdentifier(peek())
+            }
+            advance()
+            path.append(member)
+        }
+
         try consume(.assign, "Expected '='")
-
         let value = try parseExpression()
-
         let range = SourceRange(start: start, end: value.range.end)
 
-        return AssignStatement(range: range, name: name, value: value)
+        if path.isEmpty {
+            return AssignStatement(range: range, name: baseName, value: value)
+        } else {
+            return MemberAssignStatement(range: range, baseName: baseName, memberPath: path, value: value)
+        }
+    }
+
+    // Lookahead: identifier ('.' identifier)+ '='
+    private func isMemberAssignAhead() -> Bool {
+        var i = current
+        // first token is identifier (checked by caller)
+        i += 1
+        guard i < tokens.count else { return false }
+        var j = i
+        var sawDot = false
+        while j + 1 < tokens.count {
+            if tokens[j].kind == .dot, case .identifier = tokens[j + 1].kind {
+                sawDot = true
+                j += 2
+            } else {
+                break
+            }
+        }
+        if sawDot, j < tokens.count, tokens[j].kind == .assign { return true }
+        return false
     }
 
     private func parseReturnStatement() throws -> ReturnStatement {
@@ -366,22 +430,37 @@ public final class Parser {
     private func parseCallOrPrimary() throws -> any Expression {
         var expr = try parsePrimary()
 
-        // Handle function calls
-        while match(.leftParen) {
-            let start = expr.range.start
-
-            var arguments: [any Expression] = []
-            if !check(.rightParen) {
-                repeat {
-                    let arg = try parseExpression()
-                    arguments.append(arg)
-                } while match(.comma)
+        // Handle chained member access and function calls
+        loop: while true {
+            if match(.dot) {
+                // Member access: expr.identifier
+                let start = expr.range.start
+                guard case let .identifier(memberName) = peek().kind else {
+                    throw ParseError.expectedIdentifier(peek())
+                }
+                let memberTok = advance()
+                let range = SourceRange(start: start, end: memberTok.range.end)
+                expr = MemberAccessExpression(range: range, base: expr, member: memberName)
+                continue
             }
 
-            let endToken = try consume(.rightParen, "Expected ')' after arguments")
-            let range = SourceRange(start: start, end: endToken.range.end)
+            if match(.leftParen) {
+                // Function call: expr(args)
+                let start = expr.range.start
+                var arguments: [any Expression] = []
+                if !check(.rightParen) {
+                    repeat {
+                        let arg = try parseExpression()
+                        arguments.append(arg)
+                    } while match(.comma)
+                }
+                let endToken = try consume(.rightParen, "Expected ')' after arguments")
+                let range = SourceRange(start: start, end: endToken.range.end)
+                expr = CallExpression(range: range, function: expr, arguments: arguments)
+                continue
+            }
 
-            expr = CallExpression(range: range, function: expr, arguments: arguments)
+            break loop
         }
 
         return expr

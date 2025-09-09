@@ -48,9 +48,13 @@ public final class TypeChecker: ASTWalker {
     }
 
     public func typeCheck(declarations: [any Declaration]) {
-        // First pass: collect function signatures
+        // First pass: collect struct and function signatures
         for declaration in declarations {
-            if let funcDecl = declaration as? FunctionDeclaration {
+            if let structDecl = declaration as? StructDeclaration {
+                // Predeclare struct types so they can be referenced
+                let structType = buildStructType(from: structDecl)
+                environment.define(structDecl.name, type: structType)
+            } else if let funcDecl = declaration as? FunctionDeclaration {
                 let funcType = buildFunctionType(from: funcDecl)
                 environment.define(funcDecl.name, type: funcType)
             } else if let externDecl = declaration as? ExternDeclaration {
@@ -63,6 +67,20 @@ public final class TypeChecker: ASTWalker {
         for declaration in declarations {
             _ = declaration.accept(self)
         }
+    }
+
+    private func buildStructType(from structDecl: StructDeclaration) -> StructType {
+        var fieldTypes: [(String, any TypeProtocol)] = []
+        for field in structDecl.fields {
+            if let fieldTypeNode = field.type {
+                let ft = fieldTypeNode.accept(self)
+                fieldTypes.append((field.name, ft))
+            } else {
+                diagnostics.missingFieldType(at: field.range, name: field.name)
+                fieldTypes.append((field.name, UnknownType()))
+            }
+        }
+        return StructType(name: structDecl.name, fields: fieldTypes)
     }
 
     private func buildFunctionType(from funcDecl: FunctionDeclaration) -> FunctionType {
@@ -140,14 +158,24 @@ public final class TypeChecker: ASTWalker {
         return node.function.accept(self)
     }
 
+    public func visit(_ node: StructDeclaration) -> any TypeProtocol {
+        // Ensure the struct type is registered and field types are resolved
+        let structType = environment.lookup(node.name) as? StructType ?? buildStructType(from: node)
+        return structType
+    }
+
     public func visit(_ node: NominalTypeNode) -> any TypeProtocol {
-        let type: any TypeProtocol = switch node.name {
+        var type: any TypeProtocol = switch node.name {
         case "Int": IntType()
         case "Int8": Int8Type()
         case "Int32": Int32Type()
         case "Bool": BoolType()
         case "Void": VoidType()
         default: UnknownType()
+        }
+        // If unknown, check environment for a user-defined type like a struct
+        if type is UnknownType, let envType = environment.lookup(node.name) {
+            type = envType
         }
         node.resolvedType = type
         if type is UnknownType {
@@ -169,18 +197,31 @@ public final class TypeChecker: ASTWalker {
     }
 
     public func visit(_ node: VarBinding) -> any TypeProtocol {
-        let valueType = node.value.accept(self)
-
-        if let explicitType = node.type {
-            let expectedType = explicitType.accept(self)
-            if !valueType.isSameType(as: expectedType) {
-                diagnostics.typeMismatch(at: node.range, expected: expectedType, actual: valueType)
+        // Handle optional initializer
+        if let initExpr = node.value {
+            let valueType = initExpr.accept(self)
+            if let explicitType = node.type {
+                let expectedType = explicitType.accept(self)
+                if !valueType.isSameType(as: expectedType) {
+                    diagnostics.typeMismatch(at: node.range, expected: expectedType, actual: valueType)
+                }
+                environment.define(node.name, type: expectedType)
+                return expectedType
+            } else {
+                environment.define(node.name, type: valueType)
+                return valueType
             }
-            environment.define(node.name, type: expectedType)
-            return expectedType
         } else {
-            environment.define(node.name, type: valueType)
-            return valueType
+            // No initializer: allowed for struct fields (handled in buildStructType)
+            // For local/global vars, require explicit type and emit diagnostic if missing
+            if let explicitType = node.type {
+                let expectedType = explicitType.accept(self)
+                environment.define(node.name, type: expectedType)
+                return expectedType
+            } else {
+                diagnostics.missingInitializer(at: node.range, name: node.name)
+                return UnknownType()
+            }
         }
     }
 
@@ -201,6 +242,43 @@ public final class TypeChecker: ASTWalker {
         }
 
         return valueType
+    }
+
+    public func visit(_ node: MemberAssignStatement) -> any TypeProtocol {
+        // Check base struct type
+        guard let baseType = environment.lookup(node.baseName) else {
+            diagnostics.undefinedVariable(at: node.range, name: node.baseName)
+            return UnknownType()
+        }
+        guard var currentType = baseType as? StructType else {
+            diagnostics.invalidMemberAccess(at: node.range, type: baseType)
+            return UnknownType()
+        }
+
+        // Walk the path to determine final field type
+        for (index, member) in node.memberPath.enumerated() {
+            if let (_, fieldType) = currentType.fields.first(where: { $0.0 == member }) {
+                if index == node.memberPath.count - 1 {
+                    // final
+                    let valueType = node.value.accept(self)
+                    if !valueType.isSameType(as: fieldType) {
+                        diagnostics.typeMismatch(at: node.range, expected: fieldType, actual: valueType)
+                        return UnknownType()
+                    }
+                    return fieldType
+                } else if let nested = fieldType as? StructType {
+                    currentType = nested
+                } else {
+                    diagnostics.invalidMemberAccess(at: node.range, type: fieldType)
+                    return UnknownType()
+                }
+            } else {
+                diagnostics.unknownMember(at: node.range, type: currentType, member: member)
+                return UnknownType()
+            }
+        }
+
+        return UnknownType()
     }
 
     public func visit(_ node: ReturnStatement) -> any TypeProtocol {
@@ -379,6 +457,26 @@ public final class TypeChecker: ASTWalker {
         // Store resolved type in the AST node
         node.resolvedType = resultType
         return resultType
+    }
+
+    public func visit(_ node: MemberAccessExpression) -> any TypeProtocol {
+        let baseType = node.base.accept(self)
+
+        guard let structType = baseType as? StructType else {
+            diagnostics.invalidMemberAccess(at: node.range, type: baseType)
+            node.resolvedType = UnknownType()
+            return node.resolvedType!
+        }
+
+        // Find field
+        if let (_, fieldType) = structType.fields.first(where: { $0.0 == node.member }) {
+            node.resolvedType = fieldType
+            return fieldType
+        } else {
+            diagnostics.unknownMember(at: node.range, type: baseType, member: node.member)
+            node.resolvedType = UnknownType()
+            return node.resolvedType!
+        }
     }
 
     public func visit(_ node: IntegerLiteralExpression) -> any TypeProtocol {

@@ -54,4 +54,34 @@ public final class SSAFunction {
         addBlock(block)
         return block
     }
+
+    /// Create a new basic block
+    public func insertBlock(
+        name: String,
+        parameterTypes: [any TypeProtocol] = [],
+        before block: BasicBlock
+    ) -> BasicBlock {
+        guard let index = blocks.firstIndex(of: block) else {
+            fatalError("Cannot insert block before other block: other block not in function")
+        }
+        let name = nameMap.next(for: name)
+        let block = BasicBlock(name: name, parameterTypes: parameterTypes, function: self)
+        blocks.insert(block, at: index)
+        return block
+    }
+
+    /// Create a new basic block
+    public func insertBlock(
+        name: String,
+        parameterTypes: [any TypeProtocol] = [],
+        after block: BasicBlock
+    ) -> BasicBlock {
+        guard let index = blocks.firstIndex(of: block) else {
+            fatalError("Cannot insert block before other block: other block not in function")
+        }
+        let name = nameMap.next(for: name)
+        let block = BasicBlock(name: name, parameterTypes: parameterTypes, function: self)
+        blocks.insert(block, at: index + 1)
+        return block
+    }
 }

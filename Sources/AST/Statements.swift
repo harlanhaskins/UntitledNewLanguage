@@ -18,9 +18,9 @@ public final class VarBinding: Statement {
     public let range: SourceRange
     public let name: String
     public let type: (any TypeNode)?
-    public let value: any Expression
+    public let value: (any Expression)?
 
-    public init(range: SourceRange, name: String, type: (any TypeNode)? = nil, value: any Expression) {
+    public init(range: SourceRange, name: String, type: (any TypeNode)? = nil, value: (any Expression)? = nil) {
         self.range = range
         self.name = name
         self.type = type
@@ -54,6 +54,24 @@ public final class AssignStatement: Statement {
     public init(range: SourceRange, name: String, value: any Expression) {
         self.range = range
         self.name = name
+        self.value = value
+    }
+
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
+public final class MemberAssignStatement: Statement {
+    public let range: SourceRange
+    public let baseName: String
+    public let memberPath: [String]
+    public let value: any Expression
+
+    public init(range: SourceRange, baseName: String, memberPath: [String], value: any Expression) {
+        self.range = range
+        self.baseName = baseName
+        self.memberPath = memberPath
         self.value = value
     }
 

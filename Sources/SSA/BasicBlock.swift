@@ -1,7 +1,7 @@
 import Types
 
 /// A basic block in SSA form with parameters (replacing traditional phi nodes)
-public final class BasicBlock {
+public final class BasicBlock: Equatable {
     public let name: String
     public var parameters: [BlockParameter]
     public var instructions: [any SSAInstruction]
@@ -50,6 +50,10 @@ public final class BasicBlock {
     /// Get all successors of this block
     public var successors: [BasicBlock] {
         return terminator?.successors ?? []
+    }
+
+    public static func ==(lhs: BasicBlock, rhs: BasicBlock) -> Bool {
+        lhs === rhs
     }
 }
 

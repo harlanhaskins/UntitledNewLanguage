@@ -26,8 +26,14 @@ private final class SSAValueToCNameMap {
         if let existing = valueToName[id] {
             return existing
         }
-        
-        let name = names.next(for: "local")
+
+        var userProvidedName: String?
+        if let result = value as? InstructionResult,
+           let alloca = result.instruction as? AllocaInst {
+            userProvidedName = alloca.userProvidedName
+        }
+
+        let name = names.next(for: userProvidedName ?? "local")
         valueToName[id] = name
         return name
     }
@@ -126,8 +132,8 @@ public final class CFunctionEmitter {
             // Collect instruction results
             for instruction in block.instructions {
                 if let result = getInstructionResult(instruction) {
-                    // Skip alloca results as they're handled as local vars
-                    if !(instruction is AllocaInst) {
+                    // Skip alloca and field address results (no C temp needed)
+                    if !(instruction is AllocaInst) && !(instruction is FieldAddressInst) {
                         let varName = variableNameMap.getTempName(for: result)
                         tempVars.append((result.type, varName))
                     }
@@ -170,13 +176,25 @@ public final class CFunctionEmitter {
 
         case let load as LoadInst:
             let resultName = variableNameMap.getTempName(for: load.result!)
-            let addressName = getValueName(load.address)
-            return "\(resultName) = \(addressName);"
+            if let addrRes = load.address as? InstructionResult,
+               let fieldAddr = addrRes.instruction as? FieldAddressInst {
+                let lvalue = formatLValue(for: fieldAddr)
+                return "\(resultName) = \(lvalue);"
+            } else {
+                let addressName = getValueName(load.address)
+                return "\(resultName) = \(addressName);"
+            }
 
         case let store as StoreInst:
             let valueName = getValueName(store.value)
-            let addressName = getValueName(store.address)
-            return "\(addressName) = \(valueName);"
+            if let addrRes = store.address as? InstructionResult,
+               let fieldAddr = addrRes.instruction as? FieldAddressInst {
+                let lvalue = formatLValue(for: fieldAddr)
+                return "\(lvalue) = \(valueName);"
+            } else {
+                let addressName = getValueName(store.address)
+                return "\(addressName) = \(valueName);"
+            }
 
         case let binary as BinaryOp:
             let resultName = variableNameMap.getTempName(for: binary.result!)
@@ -205,6 +223,13 @@ public final class CFunctionEmitter {
             let valueName = getValueName(cast.value)
             let targetType = formatCType(cast.targetType)
             return "\(resultName) = (\(targetType))\(valueName);"
+        case let field as FieldExtractInst:
+            let resultName = variableNameMap.getTempName(for: field.result!)
+            let baseName = getValueName(field.base)
+            return "\(resultName) = \(baseName).\(field.fieldName);"
+        case let fieldAddr as FieldAddressInst:
+            // No runtime code for address computation (GEP)
+            return "// gep &\(formatLValue(for: fieldAddr))"
 
         default:
             return "// unknown instruction: \(type(of: instruction))"
@@ -296,6 +321,10 @@ public final class CFunctionEmitter {
             return cast.result
         case let unary as UnaryOp:
             return unary.result
+        case let field as FieldExtractInst:
+            return field.result
+        case let fieldAddr as FieldAddressInst:
+            return fieldAddr.result
         default:
             return nil
         }
@@ -313,11 +342,35 @@ public final class CFunctionEmitter {
             return "bool"
         case is VoidType:
             return "void"
+        case let s as StructType:
+            return s.name
         case let pointer as PointerType:
             return "\(formatCType(pointer.pointee))*"
         default:
             return "void*" // fallback
         }
+    }
+
+    /// Build a C lvalue expression for a field address path
+    private func formatLValue(for fieldAddr: FieldAddressInst) -> String {
+        var baseExpr: String
+        if let baseRes = fieldAddr.baseAddress as? InstructionResult,
+           baseRes.instruction is AllocaInst {
+            baseExpr = variableNameMap.getLocalVarName(for: baseRes)
+        } else {
+            let baseName = getValueName(fieldAddr.baseAddress)
+            if fieldAddr.baseAddress.type is PointerType {
+                baseExpr = "(*\(baseName))"
+            } else {
+                baseExpr = baseName
+            }
+        }
+
+        var expr = baseExpr
+        for f in fieldAddr.fieldPath {
+            expr += ".\(f)"
+        }
+        return expr
     }
 
     private func formatBinaryOp(_ op: BinaryOp.Operator) -> String {
@@ -446,6 +499,9 @@ public struct CEmitter {
         output += generatePreamble()
         output += generateExternDeclarations(declarations)
 
+        // Emit typedefs for struct declarations first for readability
+        output += generateStructTypedefs(declarations)
+
         if !forwardDecls.isEmpty {
             output += "// Function forward declarations\n"
             for decl in forwardDecls { output += decl }
@@ -467,5 +523,38 @@ fileprivate func formatCType(_ type: any TypeProtocol) -> String {
     case is VoidType: return "void"
     case let pointer as PointerType: return "\(formatCType(pointer.pointee))*"
     default: return "void*"
+    }
+}
+
+// MARK: - Struct typedef emission
+extension CEmitter {
+    fileprivate func generateStructTypedefs(_ declarations: [any Declaration]) -> String {
+        var output = ""
+        for decl in declarations {
+            guard let s = decl as? StructDeclaration else { continue }
+            // Emit typedef struct Name { fields } Name;
+            output += "typedef struct \(s.name) {\n"
+            for field in s.fields {
+                let cType: String = {
+                    if let nominal = field.type as? NominalTypeNode {
+                        switch nominal.name {
+                        case "Int": return "int64_t"
+                        case "Int8": return "char"
+                        case "Int32": return "int32_t"
+                        case "Bool": return "bool"
+                        case "Void": return "void"
+                        default: return nominal.name // assume typedef struct or user type
+                        }
+                    } else if let resolved = field.type?.resolvedType {
+                        return formatCType(resolved)
+                    } else {
+                        return formatCType(UnknownType())
+                    }
+                }()
+                output += "    \(cType) \(field.name);\n"
+            }
+            output += "} \(s.name);\n\n"
+        }
+        return output
     }
 }

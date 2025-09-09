@@ -2,6 +2,7 @@ public enum TokenKind: Equatable, Sendable {
     // Keywords
     case `func`
     case `var`
+    case `struct`
     case `return`
     case extern
     case `true`
@@ -45,6 +46,7 @@ public enum TokenKind: Equatable, Sendable {
     case underscore // _
     case at // @
     case ellipsis // ...
+    case dot // .
 
     // Special
     case eof

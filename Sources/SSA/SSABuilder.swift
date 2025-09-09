@@ -80,6 +80,8 @@ public final class SSAFunctionBuilder {
             lowerVarBinding(varBinding)
         case let assignStmt as AssignStatement:
             lowerAssignStatement(assignStmt)
+        case let mAssign as MemberAssignStatement:
+            lowerMemberAssignStatement(mAssign)
         case let returnStmt as ReturnStatement:
             lowerReturnStatement(returnStmt)
         case let exprStmt as ExpressionStatement:
@@ -98,21 +100,28 @@ public final class SSAFunctionBuilder {
     private func lowerVarBinding(_ varBinding: VarBinding) {
         let originalBlock = currentBlock
 
-        // Get the variable type from the expression
-        guard let varType = varBinding.value.resolvedType else { return }
+        // If there's an initializer, use its type. Otherwise, use explicit type.
+        let varType: any TypeProtocol
+        if let initExpr = varBinding.value, let initType = initExpr.resolvedType {
+            varType = initType
+        } else if let t = varBinding.type?.resolvedType {
+            varType = t
+        } else {
+            return
+        }
 
         // Allocate memory for the variable in the original block
-        let allocaInst = AllocaInst(allocatedType: varType, result: nil)
+        let allocaInst = AllocaInst(allocatedType: varType, userProvidedName: varBinding.name, result: nil)
         let allocaResult = InstructionResult(type: PointerType(pointee: varType), instruction: allocaInst)
-        let allocaWithResult = AllocaInst(allocatedType: varType, result: allocaResult)
+        let allocaWithResult = AllocaInst(allocatedType: varType, userProvidedName: varBinding.name, result: allocaResult)
         originalBlock.add(allocaWithResult)
 
-        // Store the initial value (this may change currentBlock due to short-circuiting)
-        let value = lowerExpression(varBinding.value)
-        let storeInst = StoreInst(address: allocaResult, value: value)
-
-        // Store in the current block (after expression evaluation)
-        insert(storeInst)
+        // If we have an initializer, store it
+        if let initExpr = varBinding.value {
+            let value = lowerExpression(initExpr)
+            let storeInst = StoreInst(address: allocaResult, value: value)
+            insert(storeInst)
+        }
 
         // Map variable name to its alloca
         variableMap[varBinding.name] = allocaResult
@@ -127,6 +136,22 @@ public final class SSAFunctionBuilder {
         let storeInst = StoreInst(address: address, value: value)
 
         // Store in the current block (after expression evaluation)
+        insert(storeInst)
+    }
+
+    /// Lower a member assignment statement (p.x.y = value)
+    private func lowerMemberAssignStatement(_ stmt: MemberAssignStatement) {
+        guard let baseAddr = variableMap[stmt.baseName] else { return }
+        // Compute the address of the nested field
+        let fieldType = stmt.value.resolvedType ?? UnknownType()
+        let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: stmt.memberPath, result: nil)
+        let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+        let addrWithRes = FieldAddressInst(baseAddress: baseAddr, fieldPath: stmt.memberPath, result: addrRes)
+        insert(addrWithRes)
+
+        // Store the value
+        let value = lowerExpression(stmt.value)
+        let storeInst = StoreInst(address: addrRes, value: value)
         insert(storeInst)
     }
 
@@ -149,6 +174,8 @@ public final class SSAFunctionBuilder {
             return lowerCallExpression(call)
         case let cast as CastExpression:
             return lowerCastExpression(cast)
+        case let member as MemberAccessExpression:
+            return lowerMemberAccess(member)
         case let identifier as IdentifierExpression:
             return lowerIdentifierExpression(identifier)
         case let intLiteral as IntegerLiteralExpression:
@@ -161,6 +188,54 @@ public final class SSAFunctionBuilder {
             // Fallback - create unknown constant
             return ConstantValue(type: UnknownType(), value: "unknown")
         }
+    }
+
+    private func lowerMemberAccess(_ member: MemberAccessExpression) -> any SSAValue {
+        // Flatten chained member access into a base and a path
+        var path: [String] = []
+        var baseExpr: any Expression = member
+        while let mem = baseExpr as? MemberAccessExpression {
+            path.insert(mem.member, at: 0)
+            baseExpr = mem.base
+        }
+
+        // If base is an identifier referencing a local alloca, compute address via FieldAddressInst and load
+        if let ident = baseExpr as? IdentifierExpression,
+           let baseAddr = variableMap[ident.name],
+           baseAddr.type is PointerType {
+            // Determine final field type from the MemberAccessExpression's resolved type
+            let fieldType = member.resolvedType ?? UnknownType()
+            let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: nil)
+            let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+            let addrWithRes = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: addrRes)
+            insert(addrWithRes)
+
+            // Load from the computed address
+            let loadInst = LoadInst(address: addrRes, result: nil)
+            let loadRes = InstructionResult(type: fieldType, instruction: loadInst)
+            let loadWithRes = LoadInst(address: addrRes, result: loadRes)
+            insert(loadWithRes)
+            return loadRes
+        }
+
+        // Fallback: evaluate base to a value and extract step by step
+        var currentValue = lowerExpression(baseExpr)
+        var currentType: any TypeProtocol = (baseExpr as? Expression)?.resolvedType ?? UnknownType()
+        for name in path {
+            let resultType: any TypeProtocol
+            if let structType = currentType as? StructType, let field = structType.fields.first(where: { $0.0 == name }) {
+                resultType = field.1
+            } else {
+                resultType = member.resolvedType ?? UnknownType()
+            }
+            let inst = FieldExtractInst(base: currentValue, fieldName: name, result: nil)
+            let res = InstructionResult(type: resultType, instruction: inst)
+            let withRes = FieldExtractInst(base: currentValue, fieldName: name, result: res)
+            insert(withRes)
+            currentValue = res
+            currentType = resultType
+        }
+        return currentValue
     }
 
     /// Lower a unary expression
@@ -421,16 +496,16 @@ public final class SSAFunctionBuilder {
             let condition = lowerExpression(clause.condition)
 
             // Create then block for this clause
-            let thenBlock = currentFunction.createBlock(name: "then")
+            let thenBlock = currentFunction.insertBlock(name: "then", before: mergeBlock)
 
             // Create block for next condition or else block
             let nextBlock: BasicBlock
             if index < ifStmt.clauses.count - 1 {
                 // More clauses to check
-                nextBlock = currentFunction.createBlock(name: "cond")
+                nextBlock = currentFunction.insertBlock(name: "cond", before: mergeBlock)
             } else if ifStmt.elseBlock != nil {
                 // Has else block
-                nextBlock = currentFunction.createBlock(name: "else_block")
+                nextBlock = currentFunction.insertBlock(name: "else_block", before: mergeBlock)
             } else {
                 // No more conditions, go to merge
                 nextBlock = mergeBlock

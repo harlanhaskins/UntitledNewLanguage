@@ -187,3 +187,28 @@ public struct UnknownType: TypeProtocol {
     public var typeId: String { "?\(id)" }
     public var description: String { "?" }
 }
+
+// MARK: - Struct Type
+
+public struct StructType: TypeProtocol {
+    public let name: String
+    public let fields: [(String, any TypeProtocol)] // preserve declaration order
+
+    public init(name: String, fields: [(String, any TypeProtocol)]) {
+        self.name = name
+        self.fields = fields
+    }
+
+    public func isSameType(as other: any TypeProtocol) -> Bool {
+        guard let o = other as? StructType else { return false }
+        return self.name == o.name
+    }
+
+    public func isImplicitlyConvertible(to other: any TypeProtocol) -> Bool {
+        return isSameType(as: other)
+    }
+
+    public var isConcrete: Bool { fields.allSatisfy { $0.1.isConcrete } }
+    public var typeId: String { name }
+    public var description: String { name }
+}

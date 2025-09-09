@@ -22,6 +22,7 @@ public protocol ASTWalker {
     // Declarations
     func visit(_ node: FunctionDeclaration) -> Result
     func visit(_ node: ExternDeclaration) -> Result
+    func visit(_ node: StructDeclaration) -> Result
 
     // Types
     func visit(_ node: NominalTypeNode) -> Result
@@ -31,6 +32,7 @@ public protocol ASTWalker {
     // Statements
     func visit(_ node: VarBinding) -> Result
     func visit(_ node: AssignStatement) -> Result
+    func visit(_ node: MemberAssignStatement) -> Result
     func visit(_ node: ReturnStatement) -> Result
     func visit(_ node: Block) -> Result
     func visit(_ node: ExpressionStatement) -> Result
@@ -41,6 +43,7 @@ public protocol ASTWalker {
     func visit(_ node: UnaryExpression) -> Result
     func visit(_ node: CallExpression) -> Result
     func visit(_ node: CastExpression) -> Result
+    func visit(_ node: MemberAccessExpression) -> Result
     func visit(_ node: IdentifierExpression) -> Result
     func visit(_ node: IntegerLiteralExpression) -> Result
     func visit(_ node: StringLiteralExpression) -> Result

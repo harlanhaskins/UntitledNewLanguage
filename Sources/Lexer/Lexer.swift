@@ -111,7 +111,7 @@ public final class Lexer {
             if match(".") && match(".") {
                 return makeToken(.ellipsis, start: start)
             }
-            fatalError("Unexpected character: .")
+            return makeToken(.dot, start: start)
         case "\"":
             return stringLiteral(start: start)
         default:
@@ -183,6 +183,8 @@ public final class Lexer {
             kind = .if
         case "else":
             kind = .else
+        case "struct":
+            kind = .struct
         default:
             kind = .identifier(text)
         }

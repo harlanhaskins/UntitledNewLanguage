@@ -46,6 +46,22 @@ public final class ExternDeclaration: Declaration {
     }
 }
 
+public final class StructDeclaration: Declaration {
+    public let range: SourceRange
+    public let name: String
+    public let fields: [VarBinding]
+
+    public init(range: SourceRange, name: String, fields: [VarBinding]) {
+        self.range = range
+        self.name = name
+        self.fields = fields
+    }
+
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
 public final class Parameter: ASTNode {
     public let range: SourceRange
     public let label: String?

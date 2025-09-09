@@ -149,3 +149,21 @@ public final class BooleanLiteralExpression: Expression {
         return walker.visit(self)
     }
 }
+
+public final class MemberAccessExpression: Expression {
+    public let range: SourceRange
+    public let base: any Expression
+    public let member: String
+    public var resolvedType: (any TypeProtocol)?
+
+    public init(range: SourceRange, base: any Expression, member: String) {
+        self.range = range
+        self.base = base
+        self.member = member
+        self.resolvedType = nil
+    }
+
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
