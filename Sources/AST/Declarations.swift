@@ -24,7 +24,7 @@ public final class FunctionDeclaration: Declaration {
         self.body = body
         self.isExtern = isExtern
     }
-    
+
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
         return walker.visit(self)
     }
@@ -34,13 +34,13 @@ public final class ExternDeclaration: Declaration {
     public let range: SourceRange
     public let callingConvention: String
     public let function: FunctionDeclaration
-    
+
     public init(range: SourceRange, callingConvention: String, function: FunctionDeclaration) {
         self.range = range
         self.callingConvention = callingConvention
         self.function = function
     }
-    
+
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
         return walker.visit(self)
     }
@@ -52,7 +52,7 @@ public final class Parameter: ASTNode {
     public let name: String
     public var type: any TypeNode
     public let isVariadic: Bool
-    
+
     public init(range: SourceRange, label: String?, name: String, type: any TypeNode, isVariadic: Bool = false) {
         self.range = range
         self.label = label
@@ -60,7 +60,7 @@ public final class Parameter: ASTNode {
         self.type = type
         self.isVariadic = isVariadic
     }
-    
+
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
         return walker.visit(self)
     }

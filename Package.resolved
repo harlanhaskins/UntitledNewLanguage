@@ -1,6 +1,24 @@
 {
-  "originHash" : "53f7f6c70bb3fd93a0a8b108c7688294f67e982007c394e9b845a988e2334231",
+  "originHash" : "29233215d014ae90758bfd4068b44959ef5324bbb71c7b7caf3cbb4f5ff049c6",
   "pins" : [
+    {
+      "identity" : "lite",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/llvm-swift/lite",
+      "state" : {
+        "branch" : "master",
+        "revision" : "89cfd9789fd65c526b1ccb423f935c4452c9a77e"
+      }
+    },
+    {
+      "identity" : "rainbow",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/onevcat/Rainbow.git",
+      "state" : {
+        "revision" : "626c3d4b6b55354b4af3aa309f998fae9b31a3d9",
+        "version" : "3.2.0"
+      }
+    },
     {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
@@ -15,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-subprocess",
       "state" : {
-        "revision" : "44be5d56aa4b26dc2003a67c0288a6a68366a87d",
-        "version" : "0.1.0"
+        "branch" : "main",
+        "revision" : "44be5d56aa4b26dc2003a67c0288a6a68366a87d"
       }
     },
     {

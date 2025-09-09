@@ -8,7 +8,8 @@ let package = Package(
     platforms: [.macOS(.v26)],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.1.0"),
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0")
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+        .package(url: "https://github.com/llvm-swift/lite", branch: "master")
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -17,7 +18,7 @@ let package = Package(
             name: "NewLang",
             dependencies: [
                 "CompilerDriver", "SSA", "Lexer", "Parser", "TypeSystem",
-                .product(name: "ArgumentParser", package: "swift-argument-parser")
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
         .target(
@@ -45,15 +46,21 @@ let package = Package(
             dependencies: ["Base", "AST", "Types"]
         ),
         .target(
-            name: "CompilerDriver", 
+            name: "CompilerDriver",
             dependencies: [
                 "Lexer", "Base", "AST", "Parser", "TypeSystem", "Types", "SSA",
-                .product(name: "Subprocess", package: "swift-subprocess")
+                .product(name: "Subprocess", package: "swift-subprocess"),
             ]
         ),
         .target(
             name: "SSA",
             dependencies: ["Base", "Types", "AST"]
-        )
+        ),
+        .executableTarget(
+            name: "lite",
+            dependencies: [
+                .product(name: "LiteSupport", package: "lite")
+            ]
+        ),
     ]
 )

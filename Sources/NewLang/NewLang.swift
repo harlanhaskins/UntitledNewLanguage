@@ -1,6 +1,6 @@
-import Foundation
-import CompilerDriver
 import ArgumentParser
+import CompilerDriver
+import Foundation
 
 @main
 struct NewLangCompiler: AsyncParsableCommand {
@@ -8,27 +8,33 @@ struct NewLangCompiler: AsyncParsableCommand {
         commandName: "newlang",
         abstract: "The NewLang programming language compiler",
         discussion: """
-            NewLang is a statically typed programming language that compiles to C.
-            This compiler supports boolean operations, integer arithmetic, and function declarations.
-            """,
+        NewLang is a statically typed programming language that compiles to C.
+        This compiler supports boolean operations, integer arithmetic, and function declarations.
+        """,
         version: "0.1.0"
     )
-    
+
     @Argument(help: "The source file to compile (.nl extension)")
     var inputFile: String
-    
+
     @Option(name: .shortAndLong, help: "The output executable file")
     var output: String?
-    
+
     @Flag(name: .shortAndLong, help: "Enable verbose output")
     var verbose: Bool = false
-    
+
     @Flag(help: "Skip SSA analysis passes")
     var skipAnalysis: Bool = false
-    
+
     @Flag(help: "Only run analysis passes without generating executable")
     var analyzeOnly: Bool = false
-    
+
+    @Flag(help: "Emit SSA intermediate representation to stdout")
+    var emitSsa: Bool = false
+
+    @Flag(help: "Emit C code to stdout")
+    var emitC: Bool = false
+
     func validate() throws {
         // Check if input file exists
         let fileManager = FileManager.default
@@ -36,40 +42,41 @@ struct NewLangCompiler: AsyncParsableCommand {
             throw ValidationError("Input file '\(inputFile)' does not exist.")
         }
     }
-    
+
     func run() async throws {
         let inputURL = URL(filePath: inputFile)
-        let outputURL: URL?
-        
+        let outputURL: URL
         if let output = output {
             outputURL = URL(filePath: output)
         } else {
             // Default output: same name as input but without extension
-            outputURL = inputURL.deletingPathExtension()
+            outputURL = URL(filePath: inputURL.deletingPathExtension().lastPathComponent)
         }
-        
+
         if verbose {
             print("NewLang Compiler v\(Self.configuration.version)")
             print("Input: \(inputFile)")
-            if let outputURL = outputURL {
-                print("Output: \(outputURL.path)")
-            }
+            print("Output: \(outputURL.path)")
             print("Options:")
             print("  - Verbose: \(verbose)")
             print("  - Skip Analysis: \(skipAnalysis)")
             print("  - Analyze Only: \(analyzeOnly)")
+            print("  - Emit SSA: \(emitSsa)")
+            print("  - Emit C: \(emitC)")
             print()
         }
-        
+
         do {
             let compilerOptions = CompilerOptions(
                 verbose: verbose,
                 skipAnalysis: skipAnalysis,
-                analyzeOnly: analyzeOnly
+                analyzeOnly: analyzeOnly,
+                emitSsa: emitSsa,
+                emitC: emitC
             )
             let compiler = CompilerDriver(options: compilerOptions)
             try await compiler.compile(inputFile: inputURL, outputFile: outputURL)
-            
+
             if verbose {
                 print("\n✅ Compilation completed successfully!")
             }

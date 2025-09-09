@@ -1,9 +1,0 @@
-func testLogic(_ a: Bool, _ b: Bool) -> Bool {
-    return a && b || true
-}
-
-func main() -> Int {
-    var result: Bool = testLogic(true, false)
-    result = result || false
-    return 1
-}

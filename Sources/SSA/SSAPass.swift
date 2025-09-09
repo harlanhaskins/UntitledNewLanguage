@@ -6,7 +6,7 @@ import Types
 /// Base protocol for passes that operate on individual SSA functions
 public protocol SSAFunctionPass {
     associatedtype Result
-    
+
     /// Run the pass on a single SSA function
     func run(on function: inout SSAFunction) -> Result
 }
@@ -17,8 +17,8 @@ public protocol SSAFunctionTransformPass: SSAFunctionPass where Result == Void {
     func transform(_ function: inout SSAFunction)
 }
 
-extension SSAFunctionTransformPass {
-    public func run(on function: inout SSAFunction) -> Void {
+public extension SSAFunctionTransformPass {
+    func run(on function: inout SSAFunction) {
         transform(&function)
     }
 }
@@ -30,8 +30,8 @@ public protocol SSAFunctionAnalysisPass: SSAFunctionPass where Result == Void {
     func analyze(_ function: SSAFunction, diagnostics: DiagnosticEngine)
 }
 
-extension SSAFunctionAnalysisPass {
-    public func run(on function: inout SSAFunction) -> Void {
+public extension SSAFunctionAnalysisPass {
+    func run(on _: inout SSAFunction) {
         // Analysis passes don't have access to diagnostics in the basic run method
         // They should be run through the pass manager instead
     }
@@ -42,7 +42,7 @@ extension SSAFunctionAnalysisPass {
 /// Base protocol for passes that operate on modules (collections of functions)
 public protocol SSAModulePass {
     associatedtype Result
-    
+
     /// Run the pass on a list of SSA functions
     func run(on functions: inout [SSAFunction]) -> Result
 }
@@ -53,8 +53,8 @@ public protocol SSAModuleTransformPass: SSAModulePass where Result == Void {
     func transform(_ functions: inout [SSAFunction])
 }
 
-extension SSAModuleTransformPass {
-    public func run(on functions: inout [SSAFunction]) -> Void {
+public extension SSAModuleTransformPass {
+    func run(on functions: inout [SSAFunction]) {
         transform(&functions)
     }
 }
@@ -65,8 +65,8 @@ public protocol SSAModuleAnalysisPass: SSAModulePass {
     func analyze(_ functions: [SSAFunction]) -> Result
 }
 
-extension SSAModuleAnalysisPass {
-    public func run(on functions: inout [SSAFunction]) -> Result {
+public extension SSAModuleAnalysisPass {
+    func run(on functions: inout [SSAFunction]) -> Result {
         return analyze(functions)
     }
 }
@@ -76,38 +76,38 @@ extension SSAModuleAnalysisPass {
 /// Pass manager for function passes
 public final class SSAFunctionPassManager {
     private var analysisResults: [String: Any] = [:]
-    
+
     public init() {}
-    
+
     /// Run a function analysis pass on a single function with diagnostics
     public func runAnalysis<P: SSAFunctionAnalysisPass>(_ pass: P, on function: inout SSAFunction, diagnostics: DiagnosticEngine) {
         pass.analyze(function, diagnostics: diagnostics)
     }
-    
+
     /// Run a function transform pass on a single function
     public func runTransform<P: SSAFunctionTransformPass>(_ pass: P, on function: inout SSAFunction) {
         pass.run(on: &function)
     }
-    
+
     /// Run a function transform pass on all functions in a collection
     public func runTransformOnAllFunctions<P: SSAFunctionTransformPass>(_ pass: P, on functions: inout [SSAFunction]) {
-        for i in 0..<functions.count {
+        for i in 0 ..< functions.count {
             pass.run(on: &functions[i])
         }
     }
-    
+
     /// Run a function analysis pass on all functions in a collection
     public func runAnalysisOnAllFunctions<P: SSAFunctionAnalysisPass>(_ pass: P, on functions: inout [SSAFunction], diagnostics: DiagnosticEngine) {
-        for i in 0..<functions.count {
+        for i in 0 ..< functions.count {
             pass.analyze(functions[i], diagnostics: diagnostics)
         }
     }
-    
+
     /// Get the result of a previously run analysis pass
-    public func getAnalysisResult<T>(_ type: T.Type, passName: String) -> T? {
+    public func getAnalysisResult<T>(_: T.Type, passName: String) -> T? {
         return analysisResults[passName] as? T
     }
-    
+
     /// Clear all stored analysis results
     public func clearAnalysisResults() {
         analysisResults.removeAll()
@@ -117,9 +117,9 @@ public final class SSAFunctionPassManager {
 /// Pass manager for module passes
 public final class SSAModulePassManager {
     private var analysisResults: [String: Any] = [:]
-    
+
     public init() {}
-    
+
     /// Run a module analysis pass
     @discardableResult
     public func runAnalysis<P: SSAModuleAnalysisPass>(_ pass: P, on functions: inout [SSAFunction]) -> P.Result {
@@ -128,17 +128,17 @@ public final class SSAModulePassManager {
         analysisResults[passName] = result
         return result
     }
-    
+
     /// Run a module transform pass
     public func runTransform<P: SSAModuleTransformPass>(_ pass: P, on functions: inout [SSAFunction]) {
         pass.run(on: &functions)
     }
-    
+
     /// Get the result of a previously run analysis pass
-    public func getAnalysisResult<T>(_ type: T.Type, passName: String) -> T? {
+    public func getAnalysisResult<T>(_: T.Type, passName: String) -> T? {
         return analysisResults[passName] as? T
     }
-    
+
     /// Clear all stored analysis results
     public func clearAnalysisResults() {
         analysisResults.removeAll()

@@ -10,7 +10,7 @@ public final class BlockParameter: SSAValue {
     public let type: any TypeProtocol
     public let block: BasicBlock
     public let index: Int
-    
+
     public init(type: any TypeProtocol, block: BasicBlock, index: Int) {
         self.type = type
         self.block = block
@@ -22,7 +22,7 @@ public final class BlockParameter: SSAValue {
 public final class InstructionResult: SSAValue {
     public let type: any TypeProtocol
     public let instruction: any SSAInstruction
-    
+
     public init(type: any TypeProtocol, instruction: any SSAInstruction) {
         self.type = type
         self.instruction = instruction
@@ -33,7 +33,7 @@ public final class InstructionResult: SSAValue {
 public final class ConstantValue: SSAValue {
     public let type: any TypeProtocol
     public let value: Any
-    
+
     public init(type: any TypeProtocol, value: Any) {
         self.type = type
         self.value = value

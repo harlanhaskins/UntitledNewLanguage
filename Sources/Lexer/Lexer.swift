@@ -7,33 +7,46 @@ public final class Lexer {
     private var line: Int = 1
     private var column: Int = 1
     private var offset: Int = 0
-    
+    private var hasNewlineAfterLastToken: Bool = false
+
     public init(source: String) {
         self.source = source
-        self.current = source.startIndex
+        current = source.startIndex
     }
-    
+
     public func tokenize() -> [Token] {
         var tokens: [Token] = []
-        
+
         while !isAtEnd() {
-            skipWhitespace()
-            
+            // Skip whitespace and track if we encounter newlines
+            let hadNewline = skipWhitespaceAndTrackNewlines()
+
             if isAtEnd() { break }
-            
+
+            // Check for line comments and skip them
+            if peek() == "/" && peekNext() == "/" {
+                skipLineComment()
+                continue
+            }
+
             let token = nextToken()
+            // If the previous token exists, update it with trailing newline info
+            if !tokens.isEmpty, hadNewline {
+                let lastIndex = tokens.count - 1
+                tokens[lastIndex].hasTrailingNewline = true
+            }
             tokens.append(token)
         }
-        
+
         let eofLocation = currentLocation()
         tokens.append(Token(kind: .eof, range: SourceRange(start: eofLocation, end: eofLocation)))
         return tokens
     }
-    
+
     private func nextToken() -> Token {
         let start = currentLocation()
         let char = advance()
-        
+
         switch char {
         case "(":
             return makeToken(.leftParen, start: start)
@@ -65,7 +78,25 @@ public final class Lexer {
         case "%":
             return makeToken(.modulo, start: start)
         case "=":
+            if match("=") {
+                return makeToken(.equal, start: start)
+            }
             return makeToken(.assign, start: start)
+        case "!":
+            if match("=") {
+                return makeToken(.notEqual, start: start)
+            }
+            fatalError("Unexpected character: !")
+        case "<":
+            if match("=") {
+                return makeToken(.lessThanOrEqual, start: start)
+            }
+            return makeToken(.lessThan, start: start)
+        case ">":
+            if match("=") {
+                return makeToken(.greaterThanOrEqual, start: start)
+            }
+            return makeToken(.greaterThan, start: start)
         case "&":
             if match("&") {
                 return makeToken(.logicalAnd, start: start)
@@ -76,8 +107,6 @@ public final class Lexer {
                 return makeToken(.logicalOr, start: start)
             }
             fatalError("Unexpected character: |")
-        case "\n":
-            return makeToken(.newline, start: start)
         case ".":
             if match(".") && match(".") {
                 return makeToken(.ellipsis, start: start)
@@ -95,46 +124,46 @@ public final class Lexer {
             }
         }
     }
-    
+
     private func stringLiteral(start: SourceLocation) -> Token {
         let contentStart = current
-        
+
         while !isAtEnd() && peek() != "\"" {
             advance()
         }
-        
+
         if isAtEnd() {
             fatalError("Unterminated string")
         }
-        
-        let value = String(source[contentStart..<current])
-        
+
+        let value = String(source[contentStart ..< current])
+
         // Consume closing quote
         advance()
-        
+
         return makeToken(.stringLiteral(value), start: start)
     }
-    
+
     private func numberLiteral(start: SourceLocation) -> Token {
         let tokenStart = source.index(before: current)
-        
+
         while peek().isNumber {
             advance()
         }
-        
-        let text = String(source[tokenStart..<current])
+
+        let text = String(source[tokenStart ..< current])
         return makeToken(.integerLiteral(text), start: start)
     }
-    
+
     private func identifier(start: SourceLocation) -> Token {
         let tokenStart = source.index(before: current)
-        
+
         while peek().isLetter || peek().isNumber {
             advance()
         }
-        
-        let text = String(source[tokenStart..<current])
-        
+
+        let text = String(source[tokenStart ..< current])
+
         // Check for keywords
         let kind: TokenKind
         switch text {
@@ -150,30 +179,53 @@ public final class Lexer {
             kind = .booleanLiteral(true)
         case "false":
             kind = .booleanLiteral(false)
+        case "if":
+            kind = .if
+        case "else":
+            kind = .else
         default:
             kind = .identifier(text)
         }
-        
+
         return makeToken(kind, start: start)
     }
-    
-    private func skipWhitespace() {
+
+    private func skipWhitespaceAndTrackNewlines() -> Bool {
+        var foundNewline = false
+
         while !isAtEnd() {
             let char = peek()
             if char == " " || char == "\t" || char == "\r" {
+                advance()
+            } else if char == "\n" {
+                foundNewline = true
                 advance()
             } else {
                 break
             }
         }
+
+        return foundNewline
     }
     
+    private func skipLineComment() {
+        // Consume the '//' characters
+        advance() // first '/'
+        advance() // second '/'
+        
+        // Skip until end of line or end of file
+        while !isAtEnd() && peek() != "\n" {
+            advance()
+        }
+        // Don't consume the newline - let the normal whitespace handling deal with it
+    }
+
     @discardableResult
     private func advance() -> Character {
         guard !isAtEnd() else { return "\0" }
         let char = source[current]
         current = source.index(after: current)
-        
+
         if char == "\n" {
             line += 1
             column = 1
@@ -181,15 +233,21 @@ public final class Lexer {
             column += 1
         }
         offset += 1
-        
+
         return char
     }
-    
+
     private func peek() -> Character {
         guard !isAtEnd() else { return "\0" }
         return source[current]
     }
     
+    private func peekNext() -> Character {
+        let nextIndex = source.index(after: current)
+        guard nextIndex < source.endIndex else { return "\0" }
+        return source[nextIndex]
+    }
+
     private func match(_ expected: Character) -> Bool {
         if isAtEnd() || source[current] != expected {
             return false
@@ -197,18 +255,18 @@ public final class Lexer {
         current = source.index(after: current)
         return true
     }
-    
+
     private func isAtEnd() -> Bool {
         return current >= source.endIndex
     }
-    
+
     private func currentLocation() -> SourceLocation {
         return SourceLocation(line: line, column: column, offset: offset)
     }
-    
+
     private func makeToken(_ kind: TokenKind, start: SourceLocation) -> Token {
         let end = currentLocation()
         let range = SourceRange(start: start, end: end)
-        return Token(kind: kind, range: range)
+        return Token(kind: kind, range: range, hasTrailingNewline: false)
     }
 }

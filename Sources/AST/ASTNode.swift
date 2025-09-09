@@ -10,6 +10,7 @@ public protocol Declaration: ASTNode {}
 public protocol Expression: ASTNode {
     var resolvedType: (any TypeProtocol)? { get }
 }
+
 public protocol Statement: ASTNode {}
 public protocol TypeNode: ASTNode {
     var resolvedType: (any TypeProtocol)? { get set }
@@ -17,11 +18,11 @@ public protocol TypeNode: ASTNode {
 
 public protocol ASTWalker {
     associatedtype Result
-    
+
     // Declarations
     func visit(_ node: FunctionDeclaration) -> Result
     func visit(_ node: ExternDeclaration) -> Result
-    
+
     // Types
     func visit(_ node: NominalTypeNode) -> Result
     func visit(_ node: PointerTypeNode) -> Result
@@ -33,7 +34,8 @@ public protocol ASTWalker {
     func visit(_ node: ReturnStatement) -> Result
     func visit(_ node: Block) -> Result
     func visit(_ node: ExpressionStatement) -> Result
-    
+    func visit(_ node: IfStatement) -> Result
+
     // Expressions
     func visit(_ node: BinaryExpression) -> Result
     func visit(_ node: CallExpression) -> Result
@@ -42,7 +44,7 @@ public protocol ASTWalker {
     func visit(_ node: IntegerLiteralExpression) -> Result
     func visit(_ node: StringLiteralExpression) -> Result
     func visit(_ node: BooleanLiteralExpression) -> Result
-    
+
     // Parameters
     func visit(_ node: Parameter) -> Result
 }
