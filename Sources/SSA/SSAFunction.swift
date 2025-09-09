@@ -84,4 +84,16 @@ public final class SSAFunction {
         blocks.insert(block, at: index + 1)
         return block
     }
+
+    /// Insert a new basic block before an existing block
+    public func insertBlock(name: String, before anchor: BasicBlock, parameterTypes: [any TypeProtocol] = []) -> BasicBlock {
+        let name = nameMap.next(for: name)
+        let block = BasicBlock(name: name, parameterTypes: parameterTypes, function: self)
+        if let idx = blocks.firstIndex(where: { ObjectIdentifier($0) == ObjectIdentifier(anchor) }) {
+            blocks.insert(block, at: idx)
+        } else {
+            blocks.append(block)
+        }
+        return block
+    }
 }

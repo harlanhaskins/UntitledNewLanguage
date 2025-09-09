@@ -193,10 +193,12 @@ public struct UnknownType: TypeProtocol {
 public struct StructType: TypeProtocol {
     public let name: String
     public let fields: [(String, any TypeProtocol)] // preserve declaration order
+    public let methods: [String: FunctionType]
 
-    public init(name: String, fields: [(String, any TypeProtocol)]) {
+    public init(name: String, fields: [(String, any TypeProtocol)], methods: [String: FunctionType] = [:]) {
         self.name = name
         self.fields = fields
+        self.methods = methods
     }
 
     public func isSameType(as other: any TypeProtocol) -> Bool {
@@ -208,7 +210,7 @@ public struct StructType: TypeProtocol {
         return isSameType(as: other)
     }
 
-    public var isConcrete: Bool { fields.allSatisfy { $0.1.isConcrete } }
+    public var isConcrete: Bool { fields.allSatisfy { $0.1.isConcrete } && methods.values.allSatisfy { $0.isConcrete } }
     public var typeId: String { name }
     public var description: String { name }
 }

@@ -8,6 +8,8 @@ public final class FunctionDeclaration: Declaration {
     public let returnType: (any TypeNode)?
     public let body: Block?
     public let isExtern: Bool
+    public let isMethod: Bool
+    public let ownerStructName: String?
 
     public var resolvedReturnType: (any TypeProtocol)? {
         guard let returnType else {
@@ -16,13 +18,15 @@ public final class FunctionDeclaration: Declaration {
         return returnType.resolvedType
     }
 
-    public init(range: SourceRange, name: String, parameters: [Parameter], returnType: (any TypeNode)? = nil, body: Block? = nil, isExtern: Bool = false) {
+    public init(range: SourceRange, name: String, parameters: [Parameter], returnType: (any TypeNode)? = nil, body: Block? = nil, isExtern: Bool = false, isMethod: Bool = false, ownerStructName: String? = nil) {
         self.range = range
         self.name = name
         self.parameters = parameters
         self.returnType = returnType
         self.body = body
         self.isExtern = isExtern
+        self.isMethod = isMethod
+        self.ownerStructName = ownerStructName
     }
 
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
@@ -50,11 +54,13 @@ public final class StructDeclaration: Declaration {
     public let range: SourceRange
     public let name: String
     public let fields: [VarBinding]
+    public let methods: [FunctionDeclaration]
 
-    public init(range: SourceRange, name: String, fields: [VarBinding]) {
+    public init(range: SourceRange, name: String, fields: [VarBinding], methods: [FunctionDeclaration] = []) {
         self.range = range
         self.name = name
         self.fields = fields
+        self.methods = methods
     }
 
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {

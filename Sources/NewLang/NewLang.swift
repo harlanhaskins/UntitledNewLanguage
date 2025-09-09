@@ -29,11 +29,15 @@ struct NewLangCompiler: AsyncParsableCommand {
     @Flag(help: "Only run analysis passes without generating executable")
     var analyzeOnly: Bool = false
 
-    @Flag(help: "Emit SSA intermediate representation to stdout")
-    var emitSsa: Bool = false
+    @Option(help: "Emit stage: c | ssa | parse | typecheck")
+    var emit: String?
 
-    @Flag(help: "Emit C code to stdout")
+    // Backward-compat flags (deprecated)
+    @Flag(help: .hidden)
     var emitC: Bool = false
+
+    @Flag(help: .hidden)
+    var emitSsa: Bool = false
 
     @Flag(name: .customShort("O"), help: "Enable optimizations (SSA passes and C compiler optimizations)")
     var optimize: Bool = false
@@ -64,19 +68,37 @@ struct NewLangCompiler: AsyncParsableCommand {
             print("  - Verbose: \(verbose)")
             print("  - Skip Analysis: \(skipAnalysis)")
             print("  - Analyze Only: \(analyzeOnly)")
-            print("  - Emit SSA: \(emitSsa)")
-            print("  - Emit C: \(emitC)")
+            print("  - Emit: \(emit ?? "none")")
             print("  - Optimize: \(optimize)")
             print()
         }
 
         do {
+            let stage: CompilerOptions.EmitStage = {
+                switch (emit?.lowercased()) {
+                case nil: return .none
+                case "c": return .c
+                case "ssa": return .ssa
+                case "parse": return .parse
+                case "typecheck": return .typecheck
+                default:
+                    print("warning: unknown --emit value '\(emit!)', ignoring")
+                    return .none
+                }
+            }()
+            // Legacy flag mapping if --emit not provided
+            let finalStage: CompilerOptions.EmitStage = {
+                if stage != .none { return stage }
+                if emitC { return .c }
+                if emitSsa { return .ssa }
+                return .none
+            }()
+
             let compilerOptions = CompilerOptions(
                 verbose: verbose,
                 skipAnalysis: skipAnalysis,
                 analyzeOnly: analyzeOnly,
-                emitSsa: emitSsa,
-                emitC: emitC,
+                emitStage: finalStage,
                 optimize: optimize
             )
             let compiler = CompilerDriver(options: compilerOptions)

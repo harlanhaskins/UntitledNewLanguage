@@ -305,16 +305,23 @@ public final class Parser {
         try consume(.leftBrace, "Expected '{' after struct name")
 
         var fields: [VarBinding] = []
+        var methods: [FunctionDeclaration] = []
         while !check(.rightBrace) && !isAtEnd() {
-            try consume(.var, "Expected 'var' in struct body")
-            let field = try parseVarBinding(allowOptionalInitializer: true)
-            fields.append(field)
+            if match(.var) {
+                let field = try parseVarBinding(allowOptionalInitializer: true)
+                fields.append(field)
+            } else if match(.func) {
+                let method = try parseFunctionDeclaration()
+                methods.append(method)
+            } else {
+                throw ParseError.unexpectedToken(peek())
+            }
         }
 
         let endToken = try consume(.rightBrace, "Expected '}' after struct body")
         let range = SourceRange(start: start, end: endToken.range.end)
 
-        return StructDeclaration(range: range, name: name, fields: fields)
+        return StructDeclaration(range: range, name: name, fields: fields, methods: methods)
     }
 
     private func parseAssignStatement() throws -> any Statement {

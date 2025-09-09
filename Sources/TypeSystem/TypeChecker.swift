@@ -33,6 +33,7 @@ public final class TypeChecker: ASTWalker {
 
     private var environment: TypeEnvironment
     private let diagnostics: DiagnosticEngine
+    private var currentStructContext: StructType? = nil
 
     public init(diagnostics: DiagnosticEngine = DiagnosticEngine()) {
         environment = TypeEnvironment()
@@ -52,8 +53,15 @@ public final class TypeChecker: ASTWalker {
         for declaration in declarations {
             if let structDecl = declaration as? StructDeclaration {
                 // Predeclare struct types so they can be referenced
-                let structType = buildStructType(from: structDecl)
-                environment.define(structDecl.name, type: structType)
+                let baseStructType = buildStructType(from: structDecl)
+                // Build method types (with implicit self) and attach to struct type
+                var methodMap: [String: FunctionType] = [:]
+                for method in structDecl.methods {
+                    let mt = buildMethodType(from: method, owner: baseStructType)
+                    methodMap[method.name] = mt
+                }
+                let fullStructType = StructType(name: baseStructType.name, fields: baseStructType.fields, methods: methodMap)
+                environment.define(structDecl.name, type: fullStructType)
             } else if let funcDecl = declaration as? FunctionDeclaration {
                 let funcType = buildFunctionType(from: funcDecl)
                 environment.define(funcDecl.name, type: funcType)
@@ -99,6 +107,19 @@ public final class TypeChecker: ASTWalker {
 
         let returnType: any TypeProtocol = funcDecl.resolvedReturnType ?? funcDecl.returnType?.accept(self) ?? VoidType()
 
+        return FunctionType(parameters: paramTypes, returnType: returnType, isVariadic: isVariadic)
+    }
+
+    private func buildMethodType(from funcDecl: FunctionDeclaration, owner: StructType) -> FunctionType {
+        var paramTypes: [any TypeProtocol] = [owner]
+        var isVariadic = false
+        for param in funcDecl.parameters {
+            let p = param.type.resolvedType ?? param.type.accept(self)
+            param.type.resolvedType = p
+            paramTypes.append(p)
+            if param.isVariadic { isVariadic = true }
+        }
+        let returnType: any TypeProtocol = funcDecl.resolvedReturnType ?? funcDecl.returnType?.accept(self) ?? VoidType()
         return FunctionType(parameters: paramTypes, returnType: returnType, isVariadic: isVariadic)
     }
 
@@ -161,6 +182,42 @@ public final class TypeChecker: ASTWalker {
     public func visit(_ node: StructDeclaration) -> any TypeProtocol {
         // Ensure the struct type is registered and field types are resolved
         let structType = environment.lookup(node.name) as? StructType ?? buildStructType(from: node)
+
+        // Type-check methods with implicit self in context
+        let prevContext = currentStructContext
+        currentStructContext = structType
+
+        for method in node.methods {
+            // Push scope with implicit 'self'
+            let prevEnv = environment
+            environment = environment.pushScope()
+            environment.define("self", type: structType)
+
+            // Add method parameters to scope and resolve their types
+            for param in method.parameters {
+                let pType = param.type.accept(self)
+                param.type.resolvedType = pType
+                environment.define(param.name, type: pType)
+            }
+
+            // Type check body and return type
+            if let body = method.body {
+                _ = body.accept(self)
+                if let returnStmt = findReturnStatement(in: body) {
+                    let actualReturnType = returnStmt.accept(self)
+                    let expectedReturnType: any TypeProtocol = method.returnType?.accept(self) ?? VoidType()
+                    if !actualReturnType.isSameType(as: expectedReturnType) {
+                        diagnostics.typeMismatch(at: returnStmt.range, expected: expectedReturnType, actual: actualReturnType)
+                    }
+                }
+            }
+
+            // Restore previous environment
+            environment = prevEnv
+        }
+
+        currentStructContext = prevContext
+
         return structType
     }
 
@@ -373,6 +430,34 @@ public final class TypeChecker: ASTWalker {
     }
 
     public func visit(_ node: CallExpression) -> any TypeProtocol {
+        // Special-case: method call receiver.method(args)
+        if let memberAccess = node.function as? MemberAccessExpression {
+            // Evaluate base and get its struct type
+            let baseType = memberAccess.base.accept(self)
+            if let structType = baseType as? StructType, let methodType = structType.methods[memberAccess.member] {
+                // Type check arguments against declared parameters (excluding self)
+                let expectedArgCount = methodType.parameters.count - 1
+                let actualArgCount = node.arguments.count
+                if expectedArgCount != actualArgCount {
+                    diagnostics.argumentCountMismatch(at: node.range, expected: expectedArgCount, actual: actualArgCount)
+                }
+                for (index, arg) in node.arguments.enumerated() {
+                    let argType = arg.accept(self)
+                    if index + 1 < methodType.parameters.count {
+                        let expectedType = methodType.parameters[index + 1]
+                        if !argType.isSameType(as: expectedType) {
+                            diagnostics.typeMismatch(at: arg.range, expected: expectedType, actual: argType)
+                        }
+                    }
+                }
+                // Propagate member access expression type for AST printing
+                let exposed = FunctionType(parameters: Array(methodType.parameters.dropFirst()), returnType: methodType.returnType, isVariadic: methodType.isVariadic)
+                memberAccess.resolvedType = exposed
+                node.resolvedType = methodType.returnType
+                return methodType.returnType
+            }
+        }
+
         let functionType = node.function.accept(self)
 
         var resultType: any TypeProtocol
@@ -446,9 +531,13 @@ public final class TypeChecker: ASTWalker {
     }
 
     public func visit(_ node: IdentifierExpression) -> any TypeProtocol {
-        let resultType: any TypeProtocol
+        var resultType: any TypeProtocol
         if let type = environment.lookup(node.name) {
             resultType = type
+        } else if let ctx = currentStructContext,
+                  let fieldType = ctx.fields.first(where: { $0.0 == node.name })?.1 {
+            // Implicit self.field reference
+            resultType = fieldType
         } else {
             diagnostics.undefinedVariable(at: node.range, name: node.name)
             resultType = UnknownType()
@@ -468,15 +557,21 @@ public final class TypeChecker: ASTWalker {
             return node.resolvedType!
         }
 
-        // Find field
+        // Find field or method
         if let (_, fieldType) = structType.fields.first(where: { $0.0 == node.member }) {
             node.resolvedType = fieldType
             return fieldType
-        } else {
-            diagnostics.unknownMember(at: node.range, type: baseType, member: node.member)
-            node.resolvedType = UnknownType()
-            return node.resolvedType!
         }
+        if let methodType = structType.methods[node.member] {
+            // Expose a callable taking only declared parameters (implicit self is bound by call site)
+            let exposed = FunctionType(parameters: Array(methodType.parameters.dropFirst()), returnType: methodType.returnType, isVariadic: methodType.isVariadic)
+            node.resolvedType = exposed
+            return exposed
+        }
+
+        diagnostics.unknownMember(at: node.range, type: baseType, member: node.member)
+        node.resolvedType = UnknownType()
+        return node.resolvedType!
     }
 
     public func visit(_ node: IntegerLiteralExpression) -> any TypeProtocol {

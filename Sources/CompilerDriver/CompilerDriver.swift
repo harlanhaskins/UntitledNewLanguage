@@ -1,4 +1,5 @@
 import Base
+import AST
 import Foundation
 import Lexer
 import Parser
@@ -8,19 +9,25 @@ import TypeSystem
 
 /// Configuration options for the compiler
 public struct CompilerOptions {
+    public enum EmitStage: String {
+        case none
+        case parse
+        case typecheck
+        case ssa
+        case c
+    }
+
     public let verbose: Bool
     public let skipAnalysis: Bool
     public let analyzeOnly: Bool
-    public let emitSsa: Bool
-    public let emitC: Bool
+    public let emitStage: EmitStage
     public let optimize: Bool
 
-    public init(verbose: Bool = false, skipAnalysis: Bool = false, analyzeOnly: Bool = false, emitSsa: Bool = false, emitC: Bool = false, optimize: Bool = false) {
+    public init(verbose: Bool = false, skipAnalysis: Bool = false, analyzeOnly: Bool = false, emitStage: EmitStage = .none, optimize: Bool = false) {
         self.verbose = verbose
         self.skipAnalysis = skipAnalysis
         self.analyzeOnly = analyzeOnly
-        self.emitSsa = emitSsa
-        self.emitC = emitC
+        self.emitStage = emitStage
         self.optimize = optimize
     }
 }
@@ -33,7 +40,7 @@ public final class CompilerDriver {
     }
 
     public func compile(inputFile: URL, outputFile: URL) async throws {
-        if !options.verbose && !options.emitC && !options.emitSsa {
+        if !options.verbose && options.emitStage == .none {
             print("=== NEWLANG COMPILER ===")
         }
 
@@ -53,6 +60,11 @@ public final class CompilerDriver {
         let parser = Parser(tokens: tokens)
         let ast = try parser.parse()
 
+        if options.emitStage == .parse {
+            print(ASTPrinter.print(declarations: ast, includeTypes: false))
+            return
+        }
+
         // Step 4: Type check the AST
         if options.verbose { print("Step 4: Type checking") }
         let diagnostics = DiagnosticEngine()
@@ -64,6 +76,11 @@ public final class CompilerDriver {
                 print("Error: \(error)")
             }
             throw CompilerError.typeCheckingFailed
+        }
+
+        if options.emitStage == .typecheck {
+            print(ASTPrinter.print(declarations: ast, includeTypes: true))
+            return
         }
 
         // Step 5: Lower AST to SSA
@@ -95,7 +112,7 @@ public final class CompilerDriver {
             passManager.runTransformOnAllFunctions(deadCodePass, on: &ssaFunctions)
 
             // Report analysis results
-            if !options.emitC && !options.emitSsa {
+            if options.emitStage != .c && options.emitStage != .ssa {
                 if ssaDiagnostics.hasWarnings {
                     for warning in ssaDiagnostics.warnings {
                         print("Warning: \(warning.message)")
@@ -110,7 +127,7 @@ public final class CompilerDriver {
         }
 
         // If emit-ssa mode, output SSA and exit
-        if options.emitSsa {
+        if options.emitStage == .ssa {
             for function in ssaFunctions {
                 print(SSAPrinter.printFunction(function))
             }
@@ -146,7 +163,7 @@ public final class CompilerDriver {
         cCode += cEmitter.emitModule(declarations: ast)
 
         // If emit-c mode, output C code and exit
-        if options.emitC {
+        if options.emitStage == .c {
             print(cCode)
             return
         }

@@ -496,16 +496,16 @@ public final class SSAFunctionBuilder {
             let condition = lowerExpression(clause.condition)
 
             // Create then block for this clause
-            let thenBlock = currentFunction.insertBlock(name: "then", before: mergeBlock)
+            let thenBlock = currentFunction.createBlock(name: "then")
 
             // Create block for next condition or else block
             let nextBlock: BasicBlock
             if index < ifStmt.clauses.count - 1 {
                 // More clauses to check
-                nextBlock = currentFunction.insertBlock(name: "cond", before: mergeBlock)
+                nextBlock = currentFunction.createBlock(name: "cond")
             } else if ifStmt.elseBlock != nil {
                 // Has else block
-                nextBlock = currentFunction.insertBlock(name: "else_block", before: mergeBlock)
+                nextBlock = currentFunction.createBlock(name: "else_block")
             } else {
                 // No more conditions, go to merge
                 nextBlock = mergeBlock
