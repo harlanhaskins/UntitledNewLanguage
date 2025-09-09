@@ -29,6 +29,26 @@ public final class BinaryOp: SSAInstruction {
     }
 }
 
+/// Unary operations
+public final class UnaryOp: SSAInstruction {
+    public enum Operator: String {
+        case negate
+        case logicalNot
+    }
+
+    public let `operator`: Operator
+    public let operand: any SSAValue
+    public let result: InstructionResult?
+
+    public var operands: [any SSAValue] { [operand] }
+
+    public init(operator: Operator, operand: any SSAValue, result: InstructionResult?) {
+        self.operator = `operator`
+        self.operand = operand
+        self.result = result
+    }
+}
+
 /// Function call instruction
 public final class CallInst: SSAInstruction {
     public let function: String // function name or reference

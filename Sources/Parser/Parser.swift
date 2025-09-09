@@ -344,7 +344,22 @@ public final class Parser {
     }
 
     private func parseUnaryOrPrimary() throws -> any Expression {
-        // Handle unary operators here if we add them later
+        // Prefix unary operators bind tighter than any binary operator
+        if match(.minus) {
+            // Unary negative
+            let start = previous().range.start
+            let operand = try parseUnaryOrPrimary()
+            let range = SourceRange(start: start, end: operand.range.end)
+            return UnaryExpression(range: range, operator: .negate, operand: operand)
+        }
+        if match(.exclamation) {
+            // Logical not
+            let start = previous().range.start
+            let operand = try parseUnaryOrPrimary()
+            let range = SourceRange(start: start, end: operand.range.end)
+            return UnaryExpression(range: range, operator: .logicalNot, operand: operand)
+        }
+
         return try parseCallOrPrimary()
     }
 

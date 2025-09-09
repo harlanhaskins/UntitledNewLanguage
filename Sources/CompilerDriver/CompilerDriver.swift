@@ -137,14 +137,13 @@ public final class CompilerDriver {
         // 2. Extern function declarations
         cCode += cEmitter.generateExternDeclarations(ast)
 
-        // 3. Forward declarations for all functions
-        cCode += cEmitter.generateForwardDeclarations(ssaFunctions)
-
-        // 4. Function definitions
+        // Add functions to emitter (per-function name maps)
         for function in ssaFunctions {
-            cCode += cEmitter.lowerFunction(function)
-            cCode += "\n"
+            cEmitter.addFunction(function)
         }
+
+        // Build final C code: preamble, externs, forward decls, function bodies
+        cCode += cEmitter.emitModule(declarations: ast)
 
         // If emit-c mode, output C code and exit
         if options.emitC {

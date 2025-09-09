@@ -96,6 +96,12 @@ public enum SSAPrinter {
             let op = formatBinaryOp(binary.operator)
             return "\(result) = \(op) \(left), \(right)"
 
+        case let unary as UnaryOp:
+            let result = unary.result.map { nameMap.getName(for: $0) } ?? "%unknown"
+            let operand = formatValue(unary.operand, nameMap: nameMap)
+            let op = formatUnaryOp(unary.operator)
+            return "\(result) = \(op) \(operand)"
+
         case let call as CallInst:
             let args = call.arguments.map { formatValue($0, nameMap: nameMap) }.joined(separator: ", ")
             if let result = call.result {
@@ -173,6 +179,13 @@ public enum SSAPrinter {
         case .lessThanOrEqual: return "integer_le"
         case .greaterThan: return "integer_gt"
         case .greaterThanOrEqual: return "integer_ge"
+        }
+    }
+
+    private static func formatUnaryOp(_ op: UnaryOp.Operator) -> String {
+        switch op {
+        case .negate: return "integer_neg"
+        case .logicalNot: return "logical_not"
         }
     }
 }

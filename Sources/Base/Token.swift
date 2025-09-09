@@ -18,6 +18,7 @@ public enum TokenKind: Equatable, Sendable {
     // Operators
     case plus // +
     case minus // -
+    case exclamation // ! (logical not)
     case star // * (multiply/pointer)
     case divide // /
     case modulo // %

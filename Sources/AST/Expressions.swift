@@ -7,6 +7,29 @@ public enum BinaryOperator {
     case equal, notEqual, lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual
 }
 
+public enum UnaryOperator {
+    case negate
+    case logicalNot
+}
+
+public final class UnaryExpression: Expression {
+    public let range: SourceRange
+    public let `operator`: UnaryOperator
+    public let operand: any Expression
+    public var resolvedType: (any TypeProtocol)?
+
+    public init(range: SourceRange, operator: UnaryOperator, operand: any Expression) {
+        self.range = range
+        self.operator = `operator`
+        self.operand = operand
+        self.resolvedType = nil
+    }
+
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
 public final class BinaryExpression: Expression {
     public let range: SourceRange
     public let left: any Expression

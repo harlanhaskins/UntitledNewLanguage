@@ -86,7 +86,7 @@ public final class Lexer {
             if match("=") {
                 return makeToken(.notEqual, start: start)
             }
-            fatalError("Unexpected character: !")
+            return makeToken(.exclamation, start: start)
         case "<":
             if match("=") {
                 return makeToken(.lessThanOrEqual, start: start)

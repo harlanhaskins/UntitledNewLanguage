@@ -38,163 +38,57 @@ private final class SSAValueToCNameMap {
     }
 }
 
-/// Lowers SSA functions to C code
-public struct CEmitter {
+// MARK: - Per-function C emitter
+public final class CFunctionEmitter {
     fileprivate var variableNameMap = SSAValueToCNameMap()
     private var ssaNameMap = ValueNameMap()
+    private let function: SSAFunction
 
-    public init() {
-
+    public init(function: SSAFunction) {
+        self.function = function
     }
 
-    /// Generate C preamble (standard headers)
-    public func generatePreamble() -> String {
-        var output = ""
-        output += "#include <stdbool.h>\n"
-        output += "#include <stdint.h>\n"
-        return output
-    }
-    
-    /// Generate C code for extern function declarations
-    public func generateExternDeclarations(_ declarations: [any Declaration]) -> String {
-        var output = ""
-
-        // Generate extern function declarations
-        var hasExterns = false
-        for declaration in declarations {
-            if let externDecl = declaration as? ExternDeclaration {
-                if !hasExterns {
-                    output += "\n// External function declarations\n"
-                    hasExterns = true
-                }
-                output += generateExternFunctionDeclaration(externDecl.function)
-            }
-        }
-
-        if hasExterns {
-            output += "\n"
-        }
-
-        return output
-    }
-    
-    /// Generate forward declarations for all functions
-    public func generateForwardDeclarations(_ functions: [SSAFunction]) -> String {
-        var output = ""
-        
-        if !functions.isEmpty {
-            output += "// Function forward declarations\n"
-            
-            for function in functions {
-                output += generateFunctionSignature(function)
-                output += ";\n"
-            }
-            
-            output += "\n"
-        }
-        
-        return output
-    }
-
-    /// Generate a C declaration for an extern function
-    private func generateExternFunctionDeclaration(_ function: FunctionDeclaration) -> String {
-        let returnTypeStr = formatCType(function.resolvedReturnType ?? VoidType())
-        var output = "extern \(returnTypeStr) \(function.name)("
-
-        var paramStrs: [String] = []
-        for param in function.parameters {
-            if param.isVariadic {
-                paramStrs.append("...")
-            } else {
-                let paramType = formatCType(param.type.resolvedType ?? VoidType())
-                paramStrs.append(paramType)
-            }
-        }
-
-        output += paramStrs.joined(separator: ", ")
-        output += ");\n"
-
-        return output
-    }
-
-    /// Generate function signature (without semicolon or opening brace)
-    private func generateFunctionSignature(_ function: SSAFunction) -> String {
-        // Use entry block parameters instead of function parameters
+    /// Generate the forward declaration line for this function
+    public func generateForwardDeclaration() -> String {
         let entryBlockParams = function.blocks.first?.parameters ?? []
-
-        // Function signature (handle main function specially)
         let returnTypeStr = function.name == "main" ? "int" : formatCType(function.returnType)
         var output = "\(returnTypeStr) \(function.name)("
-
-        // For forward declarations, we don't need parameter names, just types
-        let paramTypes = entryBlockParams.map { param in
-            return formatCType(param.type)
-        }
-
-        if paramTypes.isEmpty {
-            output += "void"
-        } else {
-            output += paramTypes.joined(separator: ", ")
-        }
-        output += ")"
-
+        let paramTypes = entryBlockParams.map { formatCType($0.type) }
+        output += paramTypes.isEmpty ? "void" : paramTypes.joined(separator: ", ")
+        output += ");\n"
         return output
     }
 
-    public mutating func lowerFunction(_ function: SSAFunction) -> String {
+    /// Generate the full function body (definition)
+    public func generateBody() -> String {
         var output = ""
 
-        // Reset the per-function name map so that names start fresh for each
-        // lowered function and don't leak across functions.
-        self.variableNameMap = SSAValueToCNameMap()
-
-        // Use a single, consistent name map for the entire function so that
-        // parameter names, temps, and locals never collide.
         // Ensure entry block parameters get their names first
         let entryBlockParams = function.blocks.first?.parameters ?? []
-        for param in entryBlockParams {
-            _ = variableNameMap.getTempName(for: param)
-        }
+        for param in entryBlockParams { _ = variableNameMap.getTempName(for: param) }
 
-        // Generate function signature with parameter names for definition
+        // Signature with named parameters
         let returnTypeStr = function.name == "main" ? "int" : formatCType(function.returnType)
         output += "\(returnTypeStr) \(function.name)("
-
         let paramStrs = entryBlockParams.map { param in
-            let paramName = variableNameMap.getTempName(for: param) // This will return existing name
-            return "\(formatCType(param.type)) \(paramName)"
+            let name = variableNameMap.getTempName(for: param)
+            return "\(formatCType(param.type)) \(name)"
         }
-
-        if paramStrs.isEmpty {
-            output += "void"
-        } else {
-            output += paramStrs.joined(separator: ", ")
-        }
+        output += paramStrs.isEmpty ? "void" : paramStrs.joined(separator: ", ")
         output += ") {\n"
 
-        // Collect all local variables needed (from alloca instructions) using same name map
+        // Declarations
         let localVars = collectLocalVariables(function)
+        for (type, varName) in localVars { output += "    \(formatCType(type)) \(varName);\n" }
 
-        // Declare local variables
-        for (type, varName) in localVars {
-            output += "    \(formatCType(type)) \(varName);\n"
-        }
-
-        // Collect temporary variables for instruction results using same name map
         let tempVars = collectTempVariables(function)
-        for (type, varName) in tempVars {
-            output += "    \(formatCType(type)) \(varName);\n"
-        }
+        for (type, varName) in tempVars { output += "    \(formatCType(type)) \(varName);\n" }
 
-        if !localVars.isEmpty || !tempVars.isEmpty {
-            output += "\n"
-        }
+        if !localVars.isEmpty || !tempVars.isEmpty { output += "\n" }
 
-        // Generate code for each basic block
+        // Blocks
         for (index, block) in function.blocks.enumerated() {
-            if index > 0 {
-                output += "\n"
-            }
+            if index > 0 { output += "\n" }
             output += lowerBasicBlock(block, isFirst: index == 0)
         }
 
@@ -291,6 +185,12 @@ public struct CEmitter {
             let op = formatBinaryOp(binary.operator)
             return "\(resultName) = \(leftName) \(op) \(rightName);"
 
+        case let unary as UnaryOp:
+            let resultName = variableNameMap.getTempName(for: unary.result!)
+            let operandName = getValueName(unary.operand)
+            let op = formatUnaryOp(unary.operator)
+            return "\(resultName) = \(op)\(operandName);"
+
         case let call as CallInst:
             let args = call.arguments.map { getValueName($0) }.joined(separator: ", ")
             if let result = call.result {
@@ -327,18 +227,19 @@ public struct CEmitter {
         case let branch as BranchTerm:
             let condName = getValueName(branch.condition)
             var result = ""
-            
-            // Handle true branch arguments
-            if !branch.trueArguments.isEmpty {
+
+            // If either side passes arguments to target block parameters, we must
+            // emit explicit blocks to assign those parameters before the jump.
+            if !branch.trueArguments.isEmpty || !branch.falseArguments.isEmpty {
                 result += "if (\(condName)) { "
+                // True side assignments
                 for (i, arg) in branch.trueArguments.enumerated() {
                     let argName = getValueName(arg)
                     let paramName = getValueName(branch.trueTarget.parameters[i])
                     result += "\(paramName) = \(argName); "
                 }
                 result += "goto \(branch.trueTarget.name); } else { "
-                
-                // Handle false branch arguments
+                // False side assignments
                 for (i, arg) in branch.falseArguments.enumerated() {
                     let argName = getValueName(arg)
                     let paramName = getValueName(branch.falseTarget.parameters[i])
@@ -346,7 +247,7 @@ public struct CEmitter {
                 }
                 result += "goto \(branch.falseTarget.name); }"
             } else {
-                // No arguments, use simple branch
+                // No arguments on either side; simple conditional branch
                 result = "if (\(condName)) goto \(branch.trueTarget.name); else goto \(branch.falseTarget.name);"
             }
             return result
@@ -393,6 +294,8 @@ public struct CEmitter {
             return call.result
         case let cast as CastInst:
             return cast.result
+        case let unary as UnaryOp:
+            return unary.result
         default:
             return nil
         }
@@ -432,6 +335,13 @@ public struct CEmitter {
         case .lessThanOrEqual: return "<="
         case .greaterThan: return ">"
         case .greaterThanOrEqual: return ">="
+        }
+    }
+
+    private func formatUnaryOp(_ op: UnaryOp.Operator) -> String {
+        switch op {
+        case .negate: return "-"
+        case .logicalNot: return "!"
         }
     }
 
@@ -477,5 +387,85 @@ public struct CEmitter {
         case .greaterThan: return "integer_gt"
         case .greaterThanOrEqual: return "integer_ge"
         }
+    }
+}
+
+// MARK: - Module-level C emitter that orchestrates per-function emitters
+public struct CEmitter {
+    private var forwardDecls: [String] = []
+    private var functionBodies: [String] = []
+
+    public init() {}
+
+    public mutating func addFunction(_ function: SSAFunction) {
+        let emitter = CFunctionEmitter(function: function)
+        forwardDecls.append(emitter.generateForwardDeclaration())
+        functionBodies.append(emitter.generateBody())
+    }
+
+    public func generatePreamble() -> String {
+        var output = ""
+        output += "#include <stdbool.h>\n"
+        output += "#include <stdint.h>\n"
+        return output
+    }
+
+    public func generateExternDeclarations(_ declarations: [any Declaration]) -> String {
+        var output = ""
+        var hasExterns = false
+        for declaration in declarations {
+            if let externDecl = declaration as? ExternDeclaration {
+                if !hasExterns {
+                    output += "\n// External function declarations\n"
+                    hasExterns = true
+                }
+                let fn = externDecl.function
+                let returnTypeStr = formatCType(fn.resolvedReturnType ?? VoidType())
+                var line = "extern \(returnTypeStr) \(fn.name)("
+                var paramStrs: [String] = []
+                for param in fn.parameters {
+                    if param.isVariadic {
+                        paramStrs.append("...")
+                    } else {
+                        let paramType = formatCType(param.type.resolvedType ?? VoidType())
+                        paramStrs.append(paramType)
+                    }
+                }
+                line += paramStrs.joined(separator: ", ")
+                line += ");\n"
+                output += line
+            }
+        }
+        if hasExterns { output += "\n" }
+        return output
+    }
+
+    /// Emit full C module: preamble, externs, forward decls, and function bodies
+    public func emitModule(declarations: [any Declaration]) -> String {
+        var output = ""
+        output += generatePreamble()
+        output += generateExternDeclarations(declarations)
+
+        if !forwardDecls.isEmpty {
+            output += "// Function forward declarations\n"
+            for decl in forwardDecls { output += decl }
+            output += "\n"
+        }
+
+        for body in functionBodies { output += body + "\n" }
+        return output
+    }
+}
+
+// File-private helper for formatting C types from Types module
+fileprivate func formatCType(_ type: any TypeProtocol) -> String {
+    switch type {
+    case is IntType: return "int64_t"
+    case is Int8Type: return "char"
+    case is Int32Type: return "int32_t"
+    case is BoolType: return "bool"
+    case is VoidType: return "void"
+    case let pointer as PointerType: return "\(formatCType(pointer.pointee))*"
+    default: return "void*"
     }
 }

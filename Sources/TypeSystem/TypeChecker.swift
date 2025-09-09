@@ -269,6 +269,31 @@ public final class TypeChecker: ASTWalker {
         return resultType
     }
 
+    public func visit(_ node: UnaryExpression) -> any TypeProtocol {
+        let operandType = node.operand.accept(self)
+
+        let resultType: any TypeProtocol
+        switch node.operator {
+        case .negate:
+            if operandType is IntType || operandType is Int8Type || operandType is Int32Type {
+                resultType = operandType
+            } else {
+                diagnostics.invalidOperation(at: node.range, operation: "unary -", type: operandType)
+                resultType = UnknownType()
+            }
+        case .logicalNot:
+            if operandType is BoolType {
+                resultType = BoolType()
+            } else {
+                diagnostics.invalidOperation(at: node.range, operation: "!", type: operandType)
+                resultType = UnknownType()
+            }
+        }
+
+        node.resolvedType = resultType
+        return resultType
+    }
+
     public func visit(_ node: CallExpression) -> any TypeProtocol {
         let functionType = node.function.accept(self)
 

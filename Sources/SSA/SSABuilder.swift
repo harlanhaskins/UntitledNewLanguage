@@ -143,6 +143,8 @@ public final class SSAFunctionBuilder {
         switch expression {
         case let binary as BinaryExpression:
             return lowerBinaryExpression(binary)
+        case let unary as UnaryExpression:
+            return lowerUnaryExpression(unary)
         case let call as CallExpression:
             return lowerCallExpression(call)
         case let cast as CastExpression:
@@ -159,6 +161,24 @@ public final class SSAFunctionBuilder {
             // Fallback - create unknown constant
             return ConstantValue(type: UnknownType(), value: "unknown")
         }
+    }
+
+    /// Lower a unary expression
+    private func lowerUnaryExpression(_ unary: UnaryExpression) -> any SSAValue {
+        let operand = lowerExpression(unary.operand)
+
+        let op: UnaryOp.Operator
+        switch unary.operator {
+        case .negate: op = .negate
+        case .logicalNot: op = .logicalNot
+        }
+
+        let resultType = unary.resolvedType ?? operand.type
+        let unaryInst = UnaryOp(operator: op, operand: operand, result: nil)
+        let result = InstructionResult(type: resultType, instruction: unaryInst)
+        let unaryWithResult = UnaryOp(operator: op, operand: operand, result: result)
+        insert(unaryWithResult)
+        return result
     }
 
     /// Lower a binary expression
@@ -238,13 +258,17 @@ public final class SSAFunctionBuilder {
 
         currentBlock.setTerminator(branch)
 
-        // Generate right operand evaluation in rightBlock
+        // Generate right operand evaluation starting in continueBlock.
+        // The right expression may itself contain short-circuiting which
+        // will set terminators and update currentBlock. Always add the
+        // jump to merge from whatever block is current after lowering.
         self.currentBlock = continueBlock
         let right = lowerExpression(binary.right)
 
-        // Jump from right block to merge with the right result
-        let rightJump = JumpTerm(target: mergeBlock, arguments: [right])
-        continueBlock.setTerminator(rightJump)
+        if currentBlock.terminator == nil {
+            let rightJump = JumpTerm(target: mergeBlock, arguments: [right])
+            currentBlock.setTerminator(rightJump)
+        }
 
         // Continue execution from the merge block
         self.currentBlock = mergeBlock
@@ -389,12 +413,11 @@ public final class SSAFunctionBuilder {
         // Create merge block that comes after all conditions
         let mergeBlock = currentFunction.createBlock(name: "merge")
 
-        // Start with the current block for the first condition
-        var conditionBlock = currentBlock
-
         for (index, clause) in ifStmt.clauses.enumerated() {
-            // Evaluate condition in the condition block
-            currentBlock = conditionBlock
+            // Evaluate condition in the current block. This may change currentBlock
+            // (e.g., short-circuiting creates/finishes blocks and sets currentBlock
+            // to a merge of its own). We must branch from whatever block is current
+            // after lowering the condition value.
             let condition = lowerExpression(clause.condition)
 
             // Create then block for this clause
@@ -413,13 +436,15 @@ public final class SSAFunctionBuilder {
                 nextBlock = mergeBlock
             }
 
-            // Add conditional branch to current condition block
+            // Add conditional branch to the current block (which is where the
+            // condition value is available). Do NOT reference an earlier saved
+            // block because short-circuiting may have already terminated it.
             let branch = BranchTerm(
                 condition: condition,
                 trueTarget: thenBlock,
                 falseTarget: nextBlock
             )
-            conditionBlock.setTerminator(branch)
+            currentBlock.setTerminator(branch)
 
             // Lower the then block
             currentBlock = thenBlock
@@ -430,18 +455,14 @@ public final class SSAFunctionBuilder {
                 currentBlock.setTerminator(JumpTerm(target: mergeBlock))
             }
 
-            // Move to next condition block (unless it's the merge block)
-            if nextBlock !== mergeBlock {
-                conditionBlock = nextBlock
-            }
-
+            // Continue with the next condition or else block
+            currentBlock = nextBlock
         }
 
         // Handle else block if present
         if let elseBlock = ifStmt.elseBlock {
-            // The else block should be the last nextBlock we created
-            let elseBlockBasic = ifStmt.clauses.isEmpty ? currentBlock : conditionBlock
-            currentBlock = elseBlockBasic
+            // Lower the else block in the current block (which is the block
+            // that represents the fallthrough from the last condition).
             lowerBlock(elseBlock)
 
             // Jump to merge block if no terminator was set

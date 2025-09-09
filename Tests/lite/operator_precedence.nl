@@ -88,18 +88,18 @@ func main() -> Int32 {
 }
 
 // CHECK-C: int64_t testArithmeticPrecedence(int64_t t, int64_t t1, int64_t t2) {
-// CHECK-C:     // %result = integer_mul %left, %right
+// CHECK-C:     // %1 = integer_mul %2 : $Int, %3 : $Int
 // CHECK-C:     t{{[0-9]+}} = t1 * t2;
-// CHECK-C:     // %result = integer_add %left, %right  
+// CHECK-C:     // %4 = integer_add %5 : $Int, %1 : $Int
 // CHECK-C:     t{{[0-9]+}} = t + t{{[0-9]+}};
 // CHECK-C: }
 
 // CHECK-C: bool testComparisonPrecedence(int64_t t, int64_t t1) {
-// CHECK-C:     // %result = integer_add %left, %right
+// CHECK-C:     // %1 = integer_add %2 : $Int, %3 : $Int
 // CHECK-C:     t{{[0-9]+}} = t + 5;
-// CHECK-C:     // %result = integer_mul %left, %right
-// CHECK-C:     t{{[0-9]+}} = t1 * 2;  
-// CHECK-C:     // %result = integer_gt %left, %right
+// CHECK-C:     // %4 = integer_mul %5 : $Int, %6 : $Int
+// CHECK-C:     t{{[0-9]+}} = t1 * 2;
+// CHECK-C:     // %7 = integer_gt %1 : $Int, %4 : $Int
 // CHECK-C:     t{{[0-9]+}} = t{{[0-9]+}} > t{{[0-9]+}};
 // CHECK-C: }
 
