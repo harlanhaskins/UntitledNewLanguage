@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test extern function declarations and complex expressions
 
 @extern(c)

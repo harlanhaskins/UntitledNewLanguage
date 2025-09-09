@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test comment parsing in various positions
 
 // This is a comment at the start

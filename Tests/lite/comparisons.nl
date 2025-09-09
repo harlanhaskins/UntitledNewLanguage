@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test comparison operators
 
 func testComparisons(_ x: Int, _ y: Int) -> Int {

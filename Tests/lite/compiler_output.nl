@@ -1,11 +1,11 @@
-// RUN: %newlang %s 2>&1 | %FileCheck %s
+// RUN: %newlang %s -o /dev/null 2>&1 | %FileCheck %s
 // Test compiler output messages and success patterns
 
 // CHECK: === NEWLANG COMPILER ===
 // CHECK: Warning: unused variable of type 'Int' in function 'main' (written 1 time but never read)
 // CHECK: Note: Function 'main': 1 unused variable (all write-only)
 // CHECK: Compiling to executable...
-// CHECK: ✅ Compilation successful! Output: {{.*}}compiler_output
+// CHECK: ✅ Compilation successful! Output: /dev/null
 
 func test(_ x: Int) -> Int {
     return x + 1

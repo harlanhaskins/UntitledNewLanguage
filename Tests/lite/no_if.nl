@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test without any conditionals
 
 func test(_ x: Int) -> Int {

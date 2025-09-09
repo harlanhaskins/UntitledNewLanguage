@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test complex conditions with multiple logical operators
 
 func testComplexConditions(_ x: Int, _ y: Int) -> Int {

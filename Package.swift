@@ -59,7 +59,8 @@ let package = Package(
         .executableTarget(
             name: "lite",
             dependencies: [
-                .product(name: "LiteSupport", package: "lite")
+                .product(name: "LiteSupport", package: "lite"),
+                "NewLang"
             ]
         ),
     ]

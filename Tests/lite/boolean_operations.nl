@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test boolean operations and variables
 
 func boolTest(_ a: Bool, _ b: Bool) -> Bool {

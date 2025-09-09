@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test basic arithmetic operations
 
 func add(_ x: Int, _ y: Int) -> Int {

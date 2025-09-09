@@ -43,13 +43,17 @@ private final class SSAValueToCNameMap {
 
 /// Lowers SSA functions to C code
 public enum SSAToCLowering {
+    /// Generate C preamble (standard headers)
+    public static func generatePreamble() -> String {
+        var output = ""
+        output += "#include <stdbool.h>\n"
+        output += "#include <stdint.h>\n"
+        return output
+    }
+    
     /// Generate C code for extern function declarations
     public static func generateExternDeclarations(_ declarations: [any Declaration]) -> String {
         var output = ""
-
-        // Add standard headers
-        output += "#include <stdbool.h>\n"
-        output += "#include <stdint.h>\n"
 
         // Generate extern function declarations
         var hasExterns = false
@@ -67,6 +71,24 @@ public enum SSAToCLowering {
             output += "\n"
         }
 
+        return output
+    }
+    
+    /// Generate forward declarations for all functions
+    public static func generateForwardDeclarations(_ functions: [SSAFunction]) -> String {
+        var output = ""
+        
+        if !functions.isEmpty {
+            output += "// Function forward declarations\n"
+            
+            for function in functions {
+                output += generateFunctionSignature(function)
+                output += ";\n"
+            }
+            
+            output += "\n"
+        }
+        
         return output
     }
 
@@ -91,6 +113,30 @@ public enum SSAToCLowering {
         return output
     }
 
+    /// Generate function signature (without semicolon or opening brace)
+    private static func generateFunctionSignature(_ function: SSAFunction) -> String {
+        // Use entry block parameters instead of function parameters
+        let entryBlockParams = function.blocks.first?.parameters ?? []
+
+        // Function signature (handle main function specially)
+        let returnTypeStr = function.name == "main" ? "int" : formatCType(function.returnType)
+        var output = "\(returnTypeStr) \(function.name)("
+
+        // For forward declarations, we don't need parameter names, just types
+        let paramTypes = entryBlockParams.map { param in
+            return formatCType(param.type)
+        }
+
+        if paramTypes.isEmpty {
+            output += "void"
+        } else {
+            output += paramTypes.joined(separator: ", ")
+        }
+        output += ")"
+
+        return output
+    }
+
     public static func lowerFunction(_ function: SSAFunction) -> String {
         var output = ""
         let nameMap = SSAValueToCNameMap()
@@ -103,7 +149,7 @@ public enum SSAToCLowering {
             _ = nameMap.getTempName(for: param)
         }
 
-        // Function signature (handle main function specially)
+        // Generate function signature with parameter names for definition
         let returnTypeStr = function.name == "main" ? "int" : formatCType(function.returnType)
         output += "\(returnTypeStr) \(function.name)("
 
@@ -111,7 +157,12 @@ public enum SSAToCLowering {
             let paramName = nameMap.getTempName(for: param) // This will return existing name
             return "\(formatCType(param.type)) \(paramName)"
         }
-        output += paramStrs.joined(separator: ", ")
+
+        if paramStrs.isEmpty {
+            output += "void"
+        } else {
+            output += paramStrs.joined(separator: ", ")
+        }
         output += ") {\n"
 
         // Collect all local variables needed (from alloca instructions) using same nameMap

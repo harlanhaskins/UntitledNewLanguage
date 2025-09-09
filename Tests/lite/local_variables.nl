@@ -1,4 +1,4 @@
-// RUN: %newlang %s  
+// RUN: %newlang %s -o /dev/null
 // Test local variable declarations and assignments
 
 func testLocalVar(_ x: Int) -> Int {

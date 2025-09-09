@@ -1,4 +1,4 @@
-// RUN: %newlang %s
+// RUN: %newlang %s -o /dev/null
 // Test conditional statements (if/else if/else)
 
 func testSimpleIf(_ x: Int) -> Int {

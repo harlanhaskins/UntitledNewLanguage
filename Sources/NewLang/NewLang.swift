@@ -35,6 +35,9 @@ struct NewLangCompiler: AsyncParsableCommand {
     @Flag(help: "Emit C code to stdout")
     var emitC: Bool = false
 
+    @Flag(name: .customShort("O"), help: "Enable optimizations (SSA passes and C compiler optimizations)")
+    var optimize: Bool = false
+
     func validate() throws {
         // Check if input file exists
         let fileManager = FileManager.default
@@ -63,6 +66,7 @@ struct NewLangCompiler: AsyncParsableCommand {
             print("  - Analyze Only: \(analyzeOnly)")
             print("  - Emit SSA: \(emitSsa)")
             print("  - Emit C: \(emitC)")
+            print("  - Optimize: \(optimize)")
             print()
         }
 
@@ -72,7 +76,8 @@ struct NewLangCompiler: AsyncParsableCommand {
                 skipAnalysis: skipAnalysis,
                 analyzeOnly: analyzeOnly,
                 emitSsa: emitSsa,
-                emitC: emitC
+                emitC: emitC,
+                optimize: optimize
             )
             let compiler = CompilerDriver(options: compilerOptions)
             try await compiler.compile(inputFile: inputURL, outputFile: outputURL)

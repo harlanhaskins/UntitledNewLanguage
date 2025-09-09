@@ -13,13 +13,15 @@ public struct CompilerOptions {
     public let analyzeOnly: Bool
     public let emitSsa: Bool
     public let emitC: Bool
+    public let optimize: Bool
 
-    public init(verbose: Bool = false, skipAnalysis: Bool = false, analyzeOnly: Bool = false, emitSsa: Bool = false, emitC: Bool = false) {
+    public init(verbose: Bool = false, skipAnalysis: Bool = false, analyzeOnly: Bool = false, emitSsa: Bool = false, emitC: Bool = false, optimize: Bool = false) {
         self.verbose = verbose
         self.skipAnalysis = skipAnalysis
         self.analyzeOnly = analyzeOnly
         self.emitSsa = emitSsa
         self.emitC = emitC
+        self.optimize = optimize
     }
 }
 
@@ -80,7 +82,15 @@ public final class CompilerDriver {
             let unusedVarPass = UnusedVariableFunctionPass()
             passManager.runAnalysisOnAllFunctions(unusedVarPass, on: &ssaFunctions, diagnostics: ssaDiagnostics)
 
-            // Run dead code elimination pass
+            // Run optimization passes if -O flag is enabled
+            if options.optimize {
+                if options.verbose { print("Running optimization passes") }
+                
+                // Additional optimization passes would go here
+                // For now, the -O flag primarily affects C compiler optimizations
+            }
+
+            // Always run dead code elimination pass (cleanup pass)
             let deadCodePass = DeadCodeEliminationPass()
             passManager.runTransformOnAllFunctions(deadCodePass, on: &ssaFunctions)
 
@@ -116,10 +126,19 @@ public final class CompilerDriver {
         // Step 6: Generate C code from SSA
         if options.verbose { print("Step 6: Generating C code") }
 
-        // Generate extern declarations and headers first
-        var cCode = SSAToCLowering.generateExternDeclarations(ast)
+        // Generate C code in proper order: headers, externs, forward declarations, then definitions
+        var cCode = ""
+        
+        // 1. Standard headers
+        cCode += SSAToCLowering.generatePreamble()
+        
+        // 2. Extern function declarations
+        cCode += SSAToCLowering.generateExternDeclarations(ast)
+        
+        // 3. Forward declarations for all functions
+        cCode += SSAToCLowering.generateForwardDeclarations(ssaFunctions)
 
-        // Generate function definitions
+        // 4. Function definitions
         for function in ssaFunctions {
             cCode += SSAToCLowering.lowerFunction(function)
             cCode += "\n"
@@ -147,7 +166,7 @@ public final class CompilerDriver {
         // Step 8: Compile C code with clang
         if options.verbose { print("Step 8: Compiling C to executable") }
         else { print("Compiling to executable...") }
-        try await compileWithClang(cFile: tempCFile, outputFile: outputFile)
+        try await compileWithClang(cFile: tempCFile, outputFile: outputFile, optimize: options.optimize)
 
         // Step 9: Clean up temp file
         try FileManager.default.removeItem(at: tempCFile)
@@ -160,20 +179,27 @@ public final class CompilerDriver {
         }
     }
 
-    private func compileWithClang(cFile: URL, outputFile: URL) async throws {
+    private func compileWithClang(cFile: URL, outputFile: URL, optimize: Bool) async throws {
+        var arguments = [
+            "-o", outputFile.path,
+            cFile.path,
+            "-std=c99",
+            "-Wall"
+        ]
+        
+        // Add optimization flags if requested
+        if optimize {
+            arguments += ["-O2", "-DNDEBUG"]
+        }
+        
         let result = try await Subprocess.run(
             .name("clang"),
-            arguments: [
-                "-o", outputFile.path,
-                cFile.path,
-                "-std=c99",
-                "-Wall",
-            ],
+            arguments: .init(arguments),
             output: .string(limit: 2048, encoding: UTF8.self),
             error: .string(limit: 2048, encoding: UTF8.self)
         )
 
-        if result.terminationStatus != .exited(0) {
+        if !result.terminationStatus.isSuccess {
             throw CompilerError.clangFailed(result.standardError ?? "")
         }
     }
