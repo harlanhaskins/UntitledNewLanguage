@@ -1,11 +1,13 @@
 import Types
 
 /// Maps SSA values to their dynamic names
-private final class ValueNameMap {
+public final class ValueNameMap {
     private var valueToName: [ObjectIdentifier: String] = [:]
     private var nextValueNumber = 0
 
-    func getName(for value: any SSAValue) -> String {
+    public init() {}
+
+    public func getName(for value: any SSAValue) -> String {
         let id = ObjectIdentifier(value)
 
         if let existing = valueToName[id] {
@@ -71,7 +73,7 @@ public enum SSAPrinter {
         return output
     }
 
-    private static func printInstruction(_ instruction: any SSAInstruction, nameMap: ValueNameMap) -> String {
+    public static func printInstruction(_ instruction: any SSAInstruction, nameMap: ValueNameMap) -> String {
         switch instruction {
         case let alloca as AllocaInst:
             let result = alloca.result.map { nameMap.getName(for: $0) } ?? "%unknown"
@@ -105,7 +107,7 @@ public enum SSAPrinter {
         case let cast as CastInst:
             let result = cast.result.map { nameMap.getName(for: $0) } ?? "%unknown"
             let value = formatValue(cast.value, nameMap: nameMap)
-            return "\(result) = unconditional_checked_cast \(value) : $\(formatType(cast.value.type)) to $\(formatType(cast.targetType))"
+            return "\(result) = cast \(value) : $\(formatType(cast.value.type)) to $\(formatType(cast.targetType))"
 
         default:
             return "// unknown instruction: \(type(of: instruction))"

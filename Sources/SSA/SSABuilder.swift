@@ -6,7 +6,6 @@ public final class SSABuilder {
     private var currentFunction: SSAFunction?
     private var currentBlock: BasicBlock?
     private var variableMap: [String: any SSAValue] = [:]
-    private var blockCounter: Int = 0
 
     public init() {}
 
@@ -42,7 +41,6 @@ public final class SSABuilder {
         )
 
         currentFunction = ssaFunc
-        blockCounter = 0
 
         // Create entry block with parameters
         let entry = ssaFunc.createBlock(name: "entry", parameterTypes: paramTypes)
@@ -110,21 +108,25 @@ public final class SSABuilder {
 
     /// Lower a variable binding (var x = expr)
     private func lowerVarBinding(_ varBinding: VarBinding) {
-        guard let currentBlock = currentBlock else { return }
+        guard let originalBlock = currentBlock else { return }
 
         // Get the variable type from the expression
         guard let varType = varBinding.value.resolvedType else { return }
 
-        // Allocate memory for the variable
+        // Allocate memory for the variable in the original block
         let allocaInst = AllocaInst(allocatedType: varType, result: nil)
         let allocaResult = InstructionResult(type: PointerType(pointee: varType), instruction: allocaInst)
         let allocaWithResult = AllocaInst(allocatedType: varType, result: allocaResult)
-        currentBlock.add(allocaWithResult)
+        originalBlock.add(allocaWithResult)
 
-        // Store the initial value
+        // Store the initial value (this may change currentBlock due to short-circuiting)
         let value = lowerExpression(varBinding.value)
         let storeInst = StoreInst(address: allocaResult, value: value)
-        currentBlock.add(storeInst)
+        
+        // Store in the current block (after expression evaluation)
+        if let currentBlock = currentBlock {
+            currentBlock.add(storeInst)
+        }
 
         // Map variable name to its alloca
         variableMap[varBinding.name] = allocaResult
@@ -132,12 +134,16 @@ public final class SSABuilder {
 
     /// Lower an assignment statement (x = expr)
     private func lowerAssignStatement(_ assignStmt: AssignStatement) {
-        guard let currentBlock = currentBlock else { return }
         guard let address = variableMap[assignStmt.name] else { return }
 
+        // Store the initial value (this may change currentBlock due to short-circuiting)
         let value = lowerExpression(assignStmt.value)
         let storeInst = StoreInst(address: address, value: value)
-        currentBlock.add(storeInst)
+        
+        // Store in the current block (after expression evaluation)
+        if let currentBlock = currentBlock {
+            currentBlock.add(storeInst)
+        }
     }
 
     /// Lower a return statement
@@ -146,6 +152,16 @@ public final class SSABuilder {
 
         let returnValue = returnStmt.value.map { lowerExpression($0) }
         let returnTerm = ReturnTerm(value: returnValue)
+        
+        // If the block already has a terminator, it means the expression evaluation
+        // has created control flow that ends in this merge block. That's fine -
+        // we just need to replace any existing terminator with our return.
+        if currentBlock.terminator != nil {
+            // Clear the existing terminator and set our return
+            // This is safe because merge blocks shouldn't have complex terminators
+            currentBlock.clearTerminator()
+        }
+        
         currentBlock.setTerminator(returnTerm)
     }
 
@@ -178,6 +194,18 @@ public final class SSABuilder {
             return ConstantValue(type: UnknownType(), value: "error")
         }
 
+        // Handle short-circuiting operators specially
+        switch binary.operator {
+        case .logicalAnd:
+            return lowerShortCircuitAnd(binary)
+        case .logicalOr:
+            return lowerShortCircuitOr(binary)
+        default:
+            // Handle non-short-circuiting operators normally
+            break
+        }
+
+        // For non-short-circuiting operators, evaluate both operands
         let left = lowerExpression(binary.left)
         let right = lowerExpression(binary.right)
 
@@ -188,27 +216,86 @@ public final class SSABuilder {
         case .multiply: op = .multiply
         case .divide: op = .divide
         case .modulo: op = .modulo
-        case .logicalAnd: op = .logicalAnd
-        case .logicalOr: op = .logicalOr
         case .equal: op = .equal
         case .notEqual: op = .notEqual
         case .lessThan: op = .lessThan
         case .lessThanOrEqual: op = .lessThanOrEqual
         case .greaterThan: op = .greaterThan
         case .greaterThanOrEqual: op = .greaterThanOrEqual
+        default:
+            // Should not reach here for logicalAnd/logicalOr
+            return ConstantValue(type: UnknownType(), value: "error")
         }
 
-        let isComparisonOrLogical = op == .logicalAnd || op == .logicalOr ||
-                                   op == .equal || op == .notEqual ||
-                                   op == .lessThan || op == .lessThanOrEqual ||
-                                   op == .greaterThan || op == .greaterThanOrEqual
-        let resultType = binary.resolvedType ?? (isComparisonOrLogical ? BoolType() : IntType())
+        let isComparison = op == .equal || op == .notEqual ||
+                          op == .lessThan || op == .lessThanOrEqual ||
+                          op == .greaterThan || op == .greaterThanOrEqual
+        let resultType = binary.resolvedType ?? (isComparison ? BoolType() : IntType())
         let binaryInst = BinaryOp(operator: op, left: left, right: right, result: nil)
         let result = InstructionResult(type: resultType, instruction: binaryInst)
         let binaryWithResult = BinaryOp(operator: op, left: left, right: right, result: result)
         currentBlock.add(binaryWithResult)
 
         return result
+    }
+
+    /// Lower short-circuit operation (both && and ||)
+    /// For &&: if left is false, return false, else evaluate right
+    /// For ||: if left is true, return true, else evaluate right
+    private func lowerShortCircuitOperation(_ binary: BinaryExpression, isAnd: Bool) -> any SSAValue {
+        guard let currentFunction = currentFunction, let currentBlock else {
+            return ConstantValue(type: UnknownType(), value: "error")
+        }
+
+        // Evaluate left operand in current block
+        let left = lowerExpression(binary.left)
+
+        // Create blocks for control flow
+        let opName = isAnd ? "and" : "or"
+        let continueBlock = currentFunction.createBlock(name: "\(opName)_continue")
+        let mergeBlock = currentFunction.createBlock(name: "\(opName)_merge", parameterTypes: [BoolType()])
+
+        // Create the short-circuit value and branch
+        let shortCircuitValue = ConstantValue(type: BoolType(), value: !isAnd) // false for &&, true for ||
+        let branch: BranchTerm
+        
+        if isAnd {
+            // &&: if true go to right block, if false short-circuit with false
+            branch = BranchTerm(condition: left, 
+                               trueTarget: continueBlock, trueArguments: [],
+                               falseTarget: mergeBlock, falseArguments: [shortCircuitValue])
+        } else {
+            // ||: if true short-circuit with true, if false go to right block
+            branch = BranchTerm(condition: left, 
+                               trueTarget: mergeBlock, trueArguments: [shortCircuitValue],
+                               falseTarget: continueBlock, falseArguments: [])
+        }
+        
+        currentBlock.setTerminator(branch)
+
+        // Generate right operand evaluation in rightBlock
+        self.currentBlock = continueBlock
+        let right = lowerExpression(binary.right)
+
+        // Jump from right block to merge with the right result
+        let rightJump = JumpTerm(target: mergeBlock, arguments: [right])
+        continueBlock.setTerminator(rightJump)
+
+        // Continue execution from the merge block
+        self.currentBlock = mergeBlock
+
+        // The result is the parameter of the merge block
+        return mergeBlock.parameters[0]
+    }
+
+    /// Lower short-circuit AND operation: left && right
+    private func lowerShortCircuitAnd(_ binary: BinaryExpression) -> any SSAValue {
+        return lowerShortCircuitOperation(binary, isAnd: true)
+    }
+
+    /// Lower short-circuit OR operation: left || right  
+    private func lowerShortCircuitOr(_ binary: BinaryExpression) -> any SSAValue {
+        return lowerShortCircuitOperation(binary, isAnd: false)
     }
 
     /// Lower a call expression
@@ -349,7 +436,7 @@ public final class SSABuilder {
         guard let currentFunction = currentFunction else { return }
         
         // Create merge block that comes after all conditions
-        let mergeBlock = currentFunction.createBlock(name: uniqueBlockName("merge"))
+        let mergeBlock = currentFunction.createBlock(name: "merge")
         
         // Start with the current block for the first condition
         var conditionBlock = currentBlock!
@@ -360,16 +447,16 @@ public final class SSABuilder {
             let condition = lowerExpression(clause.condition)
             
             // Create then block for this clause
-            let thenBlock = currentFunction.createBlock(name: uniqueBlockName("then"))
+            let thenBlock = currentFunction.createBlock(name: "then")
             
             // Create block for next condition or else block
             let nextBlock: BasicBlock
             if index < ifStmt.clauses.count - 1 {
                 // More clauses to check
-                nextBlock = currentFunction.createBlock(name: uniqueBlockName("cond"))
+                nextBlock = currentFunction.createBlock(name: "cond")
             } else if ifStmt.elseBlock != nil {
                 // Has else block
-                nextBlock = currentFunction.createBlock(name: uniqueBlockName("else_block"))
+                nextBlock = currentFunction.createBlock(name: "else_block")
             } else {
                 // No more conditions, go to merge
                 nextBlock = mergeBlock
@@ -396,6 +483,7 @@ public final class SSABuilder {
             if nextBlock !== mergeBlock {
                 conditionBlock = nextBlock
             }
+            
         }
         
         // Handle else block if present
@@ -426,12 +514,5 @@ public final class SSABuilder {
             // For unknown types, return 0 as a fallback
             return ConstantValue(type: type, value: 0)
         }
-    }
-    
-    /// Generate a unique block name using the counter
-    private func uniqueBlockName(_ baseName: String) -> String {
-        let name = "\(baseName)\(blockCounter)"
-        blockCounter += 1
-        return name
     }
 }

@@ -3,35 +3,20 @@ import Types
 
 /// Maps SSA values to C variable names
 private final class SSAValueToCNameMap {
+    private var names = UniqueNameMap()
     private var valueToName: [ObjectIdentifier: String] = [:]
     private var nextTempNumber = 0
     private var nextLocalNumber = 0
 
     func getTempName(for value: any SSAValue) -> String {
-        let id = ObjectIdentifier(value)
-
-        if let existing = valueToName[id] {
-            return existing
-        }
-
-        let name = "t\(nextTempNumber)"
-        nextTempNumber += 1
-
-        valueToName[id] = name
+        let name = names.next(for: "t")
+        valueToName[ObjectIdentifier(value)] = name
         return name
     }
 
     func getLocalVarName(for value: any SSAValue) -> String {
-        let id = ObjectIdentifier(value)
-
-        if let existing = valueToName[id] {
-            return existing
-        }
-
-        let name = "local\(nextLocalNumber)"
-        nextLocalNumber += 1
-
-        valueToName[id] = name
+        let name = names.next(for: "local")
+        valueToName[ObjectIdentifier(value)] = name
         return name
     }
 
@@ -42,9 +27,16 @@ private final class SSAValueToCNameMap {
 }
 
 /// Lowers SSA functions to C code
-public enum SSAToCLowering {
+public struct CEmitter {
+    fileprivate var variableNameMap = SSAValueToCNameMap()
+    private var ssaNameMap = ValueNameMap()
+
+    public init() {
+
+    }
+
     /// Generate C preamble (standard headers)
-    public static func generatePreamble() -> String {
+    public func generatePreamble() -> String {
         var output = ""
         output += "#include <stdbool.h>\n"
         output += "#include <stdint.h>\n"
@@ -52,7 +44,7 @@ public enum SSAToCLowering {
     }
     
     /// Generate C code for extern function declarations
-    public static func generateExternDeclarations(_ declarations: [any Declaration]) -> String {
+    public func generateExternDeclarations(_ declarations: [any Declaration]) -> String {
         var output = ""
 
         // Generate extern function declarations
@@ -75,7 +67,7 @@ public enum SSAToCLowering {
     }
     
     /// Generate forward declarations for all functions
-    public static func generateForwardDeclarations(_ functions: [SSAFunction]) -> String {
+    public func generateForwardDeclarations(_ functions: [SSAFunction]) -> String {
         var output = ""
         
         if !functions.isEmpty {
@@ -93,7 +85,7 @@ public enum SSAToCLowering {
     }
 
     /// Generate a C declaration for an extern function
-    private static func generateExternFunctionDeclaration(_ function: FunctionDeclaration) -> String {
+    private func generateExternFunctionDeclaration(_ function: FunctionDeclaration) -> String {
         let returnTypeStr = formatCType(function.resolvedReturnType ?? VoidType())
         var output = "extern \(returnTypeStr) \(function.name)("
 
@@ -114,7 +106,7 @@ public enum SSAToCLowering {
     }
 
     /// Generate function signature (without semicolon or opening brace)
-    private static func generateFunctionSignature(_ function: SSAFunction) -> String {
+    private func generateFunctionSignature(_ function: SSAFunction) -> String {
         // Use entry block parameters instead of function parameters
         let entryBlockParams = function.blocks.first?.parameters ?? []
 
@@ -137,7 +129,7 @@ public enum SSAToCLowering {
         return output
     }
 
-    public static func lowerFunction(_ function: SSAFunction) -> String {
+    public func lowerFunction(_ function: SSAFunction) -> String {
         var output = ""
         let nameMap = SSAValueToCNameMap()
 
@@ -166,7 +158,7 @@ public enum SSAToCLowering {
         output += ") {\n"
 
         // Collect all local variables needed (from alloca instructions) using same nameMap
-        let localVars = collectLocalVariables(function, nameMap: nameMap)
+        let localVars = collectLocalVariables(function)
 
         // Declare local variables
         for (type, varName) in localVars {
@@ -174,7 +166,7 @@ public enum SSAToCLowering {
         }
 
         // Collect temporary variables for instruction results using same nameMap
-        let tempVars = collectTempVariables(function, nameMap: nameMap)
+        let tempVars = collectTempVariables(function)
         for (type, varName) in tempVars {
             output += "    \(formatCType(type)) \(varName);\n"
         }
@@ -188,20 +180,20 @@ public enum SSAToCLowering {
             if index > 0 {
                 output += "\n"
             }
-            output += lowerBasicBlock(block, nameMap: nameMap, isFirst: index == 0)
+            output += lowerBasicBlock(block, isFirst: index == 0)
         }
 
         output += "}\n"
         return output
     }
 
-    private static func collectLocalVariables(_ function: SSAFunction, nameMap: SSAValueToCNameMap) -> [(any TypeProtocol, String)] {
+    private func collectLocalVariables(_ function: SSAFunction) -> [(any TypeProtocol, String)] {
         var localVars: [(any TypeProtocol, String)] = []
 
         for block in function.blocks {
             for instruction in block.instructions {
                 if let alloca = instruction as? AllocaInst {
-                    let varName = nameMap.getLocalVarName(for: alloca.result!)
+                    let varName = variableNameMap.getLocalVarName(for: alloca.result!)
                     localVars.append((alloca.allocatedType, varName))
                 }
             }
@@ -210,15 +202,24 @@ public enum SSAToCLowering {
         return localVars
     }
 
-    private static func collectTempVariables(_ function: SSAFunction, nameMap: SSAValueToCNameMap) -> [(any TypeProtocol, String)] {
+    private func collectTempVariables(_ function: SSAFunction) -> [(any TypeProtocol, String)] {
         var tempVars: [(any TypeProtocol, String)] = []
 
-        for block in function.blocks {
+        for (index, block) in function.blocks.enumerated() {
+            // Collect block parameters as temporary variables (except entry block which are function params)
+            if index > 0 { // Skip entry block parameters
+                for param in block.parameters {
+                    let varName = variableNameMap.getTempName(for: param)
+                    tempVars.append((param.type, varName))
+                }
+            }
+            
+            // Collect instruction results
             for instruction in block.instructions {
                 if let result = getInstructionResult(instruction) {
                     // Skip alloca results as they're handled as local vars
                     if !(instruction is AllocaInst) {
-                        let varName = nameMap.getTempName(for: result)
+                        let varName = variableNameMap.getTempName(for: result)
                         tempVars.append((result.type, varName))
                     }
                 }
@@ -228,7 +229,7 @@ public enum SSAToCLowering {
         return tempVars
     }
 
-    private static func lowerBasicBlock(_ block: BasicBlock, nameMap: SSAValueToCNameMap, isFirst: Bool) -> String {
+    private func lowerBasicBlock(_ block: BasicBlock, isFirst: Bool) -> String {
         var output = ""
 
         // Generate block label (skip for first block)
@@ -238,55 +239,55 @@ public enum SSAToCLowering {
 
         // Generate instructions
         for instruction in block.instructions {
-            let ssaComment = formatInstructionComment(instruction)
-            let cCode = lowerInstruction(instruction, nameMap: nameMap)
+            let ssaComment = SSAPrinter.printInstruction(instruction, nameMap: ssaNameMap)
+            let cCode = lowerInstruction(instruction)
             output += "    // \(ssaComment)\n"
             output += "    \(cCode)\n"
         }
 
         // Generate terminator
         if let terminator = block.terminator {
-            output += "    \(lowerTerminator(terminator, nameMap: nameMap))\n"
+            output += "    \(lowerTerminator(terminator))\n"
         }
 
         return output
     }
 
-    private static func lowerInstruction(_ instruction: any SSAInstruction, nameMap: SSAValueToCNameMap) -> String {
+    private func lowerInstruction(_ instruction: any SSAInstruction) -> String {
         switch instruction {
         case let alloca as AllocaInst:
             // Alloca is handled by variable declaration, no runtime code needed
             return "// alloca \(formatCType(alloca.allocatedType))"
 
         case let load as LoadInst:
-            let resultName = nameMap.getTempName(for: load.result!)
-            let addressName = getValueName(load.address, nameMap: nameMap)
+            let resultName = variableNameMap.getTempName(for: load.result!)
+            let addressName = getValueName(load.address)
             return "\(resultName) = \(addressName);"
 
         case let store as StoreInst:
-            let valueName = getValueName(store.value, nameMap: nameMap)
-            let addressName = getValueName(store.address, nameMap: nameMap)
+            let valueName = getValueName(store.value)
+            let addressName = getValueName(store.address)
             return "\(addressName) = \(valueName);"
 
         case let binary as BinaryOp:
-            let resultName = nameMap.getTempName(for: binary.result!)
-            let leftName = getValueName(binary.left, nameMap: nameMap)
-            let rightName = getValueName(binary.right, nameMap: nameMap)
+            let resultName = variableNameMap.getTempName(for: binary.result!)
+            let leftName = getValueName(binary.left)
+            let rightName = getValueName(binary.right)
             let op = formatBinaryOp(binary.operator)
             return "\(resultName) = \(leftName) \(op) \(rightName);"
 
         case let call as CallInst:
-            let args = call.arguments.map { getValueName($0, nameMap: nameMap) }.joined(separator: ", ")
+            let args = call.arguments.map { getValueName($0) }.joined(separator: ", ")
             if let result = call.result {
-                let resultName = nameMap.getTempName(for: result)
+                let resultName = variableNameMap.getTempName(for: result)
                 return "\(resultName) = \(call.function)(\(args));"
             } else {
                 return "\(call.function)(\(args));"
             }
 
         case let cast as CastInst:
-            let resultName = nameMap.getTempName(for: cast.result!)
-            let valueName = getValueName(cast.value, nameMap: nameMap)
+            let resultName = variableNameMap.getTempName(for: cast.result!)
+            let valueName = getValueName(cast.value)
             let targetType = formatCType(cast.targetType)
             return "\(resultName) = (\(targetType))\(valueName);"
 
@@ -295,18 +296,49 @@ public enum SSAToCLowering {
         }
     }
 
-    private static func lowerTerminator(_ terminator: any Terminator, nameMap: SSAValueToCNameMap) -> String {
+    private func lowerTerminator(_ terminator: any Terminator) -> String {
         switch terminator {
         case let jump as JumpTerm:
-            return "goto \(jump.target.name);"
+            var result = ""
+            // Assign arguments to target block parameters
+            for (i, arg) in jump.arguments.enumerated() {
+                let argName = getValueName(arg)
+                let paramName = getValueName(jump.target.parameters[i])
+                result += "\(paramName) = \(argName); "
+            }
+            result += "goto \(jump.target.name);"
+            return result
 
         case let branch as BranchTerm:
-            let condName = getValueName(branch.condition, nameMap: nameMap)
-            return "if (\(condName)) goto \(branch.trueTarget.name); else goto \(branch.falseTarget.name);"
+            let condName = getValueName(branch.condition)
+            var result = ""
+            
+            // Handle true branch arguments
+            if !branch.trueArguments.isEmpty {
+                result += "if (\(condName)) { "
+                for (i, arg) in branch.trueArguments.enumerated() {
+                    let argName = getValueName(arg)
+                    let paramName = getValueName(branch.trueTarget.parameters[i])
+                    result += "\(paramName) = \(argName); "
+                }
+                result += "goto \(branch.trueTarget.name); } else { "
+                
+                // Handle false branch arguments
+                for (i, arg) in branch.falseArguments.enumerated() {
+                    let argName = getValueName(arg)
+                    let paramName = getValueName(branch.falseTarget.parameters[i])
+                    result += "\(paramName) = \(argName); "
+                }
+                result += "goto \(branch.falseTarget.name); }"
+            } else {
+                // No arguments, use simple branch
+                result = "if (\(condName)) goto \(branch.trueTarget.name); else goto \(branch.falseTarget.name);"
+            }
+            return result
 
         case let ret as ReturnTerm:
             if let value = ret.value {
-                let valueName = getValueName(value, nameMap: nameMap)
+                let valueName = getValueName(value)
                 return "return \(valueName);"
             } else {
                 return "return;"
@@ -317,24 +349,24 @@ public enum SSAToCLowering {
         }
     }
 
-    private static func getValueName(_ value: any SSAValue, nameMap: SSAValueToCNameMap) -> String {
+    private func getValueName(_ value: any SSAValue) -> String {
         switch value {
         case let constant as ConstantValue:
             return formatConstant(constant)
         case let result as InstructionResult:
             if result.instruction is AllocaInst {
-                return nameMap.getLocalVarName(for: result)
+                return variableNameMap.getLocalVarName(for: result)
             } else {
-                return nameMap.getTempName(for: result)
+                return variableNameMap.getTempName(for: result)
             }
         case let param as BlockParameter:
-            return nameMap.getTempName(for: param)
+            return variableNameMap.getTempName(for: param)
         default:
             return "unknown_value"
         }
     }
 
-    private static func getInstructionResult(_ instruction: any SSAInstruction) -> InstructionResult? {
+    private func getInstructionResult(_ instruction: any SSAInstruction) -> InstructionResult? {
         switch instruction {
         case let alloca as AllocaInst:
             return alloca.result
@@ -351,7 +383,7 @@ public enum SSAToCLowering {
         }
     }
 
-    private static func formatCType(_ type: any TypeProtocol) -> String {
+    private func formatCType(_ type: any TypeProtocol) -> String {
         switch type {
         case is IntType:
             return "int64_t"
@@ -370,7 +402,7 @@ public enum SSAToCLowering {
         }
     }
 
-    private static func formatBinaryOp(_ op: BinaryOp.Operator) -> String {
+    private func formatBinaryOp(_ op: BinaryOp.Operator) -> String {
         switch op {
         case .add: return "+"
         case .subtract: return "-"
@@ -388,7 +420,7 @@ public enum SSAToCLowering {
         }
     }
 
-    private static func formatConstant(_ constant: ConstantValue) -> String {
+    private func formatConstant(_ constant: ConstantValue) -> String {
         switch constant.value {
         case let intVal as Int:
             return "\(intVal)"
@@ -414,41 +446,7 @@ public enum SSAToCLowering {
         }
     }
 
-    private static func formatInstructionComment(_ instruction: any SSAInstruction) -> String {
-        switch instruction {
-        case let alloca as AllocaInst:
-            let result = alloca.result != nil ? "%result" : "%unknown"
-            return "\(result) = alloca $\(formatCType(alloca.allocatedType))"
-
-        case let load as LoadInst:
-            let result = load.result != nil ? "%result" : "%unknown"
-            return "\(result) = load %address"
-
-        case _ as StoreInst:
-            return "store %value to %address"
-
-        case let binary as BinaryOp:
-            let result = binary.result != nil ? "%result" : "%unknown"
-            let op = formatSSABinaryOp(binary.operator)
-            return "\(result) = \(op) %left, %right"
-
-        case let call as CallInst:
-            if call.result != nil {
-                return "%result = apply @\(call.function)(...)"
-            } else {
-                return "apply @\(call.function)(...)"
-            }
-
-        case let cast as CastInst:
-            let result = cast.result != nil ? "%result" : "%unknown"
-            return "\(result) = unconditional_checked_cast %value"
-
-        default:
-            return "unknown instruction: \(type(of: instruction))"
-        }
-    }
-
-    private static func formatSSABinaryOp(_ op: BinaryOp.Operator) -> String {
+    private func formatSSABinaryOp(_ op: BinaryOp.Operator) -> String {
         switch op {
         case .add: return "integer_add"
         case .subtract: return "integer_sub"

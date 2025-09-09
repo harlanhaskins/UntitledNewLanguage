@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "/Users/harlan/Developer/NewLang/Examples/Test.newlang"
+            argument = "/tmp/simple.nl"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument

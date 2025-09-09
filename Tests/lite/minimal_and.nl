@@ -1,9 +1,8 @@
-// Simple && test 
+// Minimal test to debug short-circuiting
 func test() -> Bool {
     return false && true
 }
 
 func main() -> Int32 {
-    var result = test()
     return Int32(0)
 }

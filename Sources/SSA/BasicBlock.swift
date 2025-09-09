@@ -41,6 +41,11 @@ public final class BasicBlock {
         precondition(self.terminator == nil, "Block already has a terminator")
         self.terminator = terminator
     }
+    
+    /// Clear the terminator for this block (used for replacing terminators)
+    public func clearTerminator() {
+        self.terminator = nil
+    }
 
     /// Get all successors of this block
     public var successors: [BasicBlock] {

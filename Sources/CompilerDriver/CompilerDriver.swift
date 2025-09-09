@@ -126,21 +126,23 @@ public final class CompilerDriver {
         // Step 6: Generate C code from SSA
         if options.verbose { print("Step 6: Generating C code") }
 
+        let cEmitter = CEmitter()
+
         // Generate C code in proper order: headers, externs, forward declarations, then definitions
         var cCode = ""
         
         // 1. Standard headers
-        cCode += SSAToCLowering.generatePreamble()
-        
+        cCode += cEmitter.generatePreamble()
+
         // 2. Extern function declarations
-        cCode += SSAToCLowering.generateExternDeclarations(ast)
-        
+        cCode += cEmitter.generateExternDeclarations(ast)
+
         // 3. Forward declarations for all functions
-        cCode += SSAToCLowering.generateForwardDeclarations(ssaFunctions)
+        cCode += cEmitter.generateForwardDeclarations(ssaFunctions)
 
         // 4. Function definitions
         for function in ssaFunctions {
-            cCode += SSAToCLowering.lowerFunction(function)
+            cCode += cEmitter.lowerFunction(function)
             cCode += "\n"
         }
 
