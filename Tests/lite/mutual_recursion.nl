@@ -1,4 +1,4 @@
-// RUN: %newlang %s --emit-c 2>/dev/null | %FileCheck %s --check-prefixes CHECK-FORWARD
+// RUN: %newlang %s --emit c 2>/dev/null | %FileCheck %s --check-prefixes CHECK-FORWARD
 // RUN: %newlang %s -o %t && %t
 // Test mutually recursive functions - functions that call each other
 

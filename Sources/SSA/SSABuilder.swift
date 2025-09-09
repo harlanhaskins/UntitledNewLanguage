@@ -6,35 +6,46 @@ public final class SSAFunctionBuilder {
     private let currentFunction: SSAFunction
     private var currentBlock: BasicBlock
     private var variableMap: [String: any SSAValue] = [:]
+    private let selfStructType: StructType?
+    private var selfParam: (any SSAValue)? = nil
 
-    init(function: FunctionDeclaration) {
+    init(function: FunctionDeclaration, methodOwner: StructType? = nil, nameOverride: String? = nil) {
         self.function = function
 
         // Extract parameter types
-        let paramTypes = function.parameters.compactMap { param in
-            param.type.resolvedType
+        var paramTypes: [any TypeProtocol] = []
+        if let owner = methodOwner {
+            paramTypes.append(PointerType(pointee: owner))
         }
+        paramTypes += function.parameters.compactMap { $0.type.resolvedType }
 
         // Get return type
         let returnType = function.resolvedReturnType ?? VoidType()
 
         // Create SSA function
         let ssaFunc = SSAFunction(
-            name: function.name,
+            name: nameOverride ?? function.name,
             parameterTypes: paramTypes,
             returnType: returnType
         )
 
         self.currentFunction = ssaFunc
         self.currentBlock = ssaFunc.entryBlock
+        self.selfStructType = methodOwner
     }
 
     /// Lower a single function declaration to SSA
     public func lower() -> SSAFunction {
         // Map function parameters to block parameters
+        var paramIndexOffset = 0
+        if selfStructType != nil, !currentFunction.entryBlock.parameters.isEmpty {
+            selfParam = currentFunction.entryBlock.parameters[0]
+            paramIndexOffset = 1
+        }
         for (index, param) in function.parameters.enumerated() {
-            if index < currentFunction.entryBlock.parameters.count {
-                variableMap[param.name] = currentFunction.entryBlock.parameters[index]
+            let idx = index + paramIndexOffset
+            if idx < currentFunction.entryBlock.parameters.count {
+                variableMap[param.name] = currentFunction.entryBlock.parameters[idx]
             }
         }
 
@@ -129,14 +140,24 @@ public final class SSAFunctionBuilder {
 
     /// Lower an assignment statement (x = expr)
     private func lowerAssignStatement(_ assignStmt: AssignStatement) {
-        guard let address = variableMap[assignStmt.name] else { return }
-
-        // Store the initial value (this may change currentBlock due to short-circuiting)
-        let value = lowerExpression(assignStmt.value)
-        let storeInst = StoreInst(address: address, value: value)
-
-        // Store in the current block (after expression evaluation)
-        insert(storeInst)
+        if let address = variableMap[assignStmt.name] {
+            let value = lowerExpression(assignStmt.value)
+            let storeInst = StoreInst(address: address, value: value)
+            insert(storeInst)
+            return
+        }
+        if let selfParam = selfParam, let structType = selfStructType,
+           structType.fields.first(where: { $0.0 == assignStmt.name }) != nil {
+            let fieldType = assignStmt.value.resolvedType ?? UnknownType()
+            let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [assignStmt.name], result: nil)
+            let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+            let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: [assignStmt.name], result: addrRes)
+            insert(addrWithRes)
+            let value = lowerExpression(assignStmt.value)
+            let storeInst = StoreInst(address: addrRes, value: value)
+            insert(storeInst)
+            return
+        }
     }
 
     /// Lower a member assignment statement (p.x.y = value)
@@ -364,6 +385,31 @@ public final class SSAFunctionBuilder {
 
     /// Lower a call expression
     private func lowerCallExpression(_ call: CallExpression) -> any SSAValue {
+        // Method call: base.method(args) -> call Struct_method(selfPtr, args)
+        if let member = call.function as? MemberAccessExpression {
+            // Lower base to get its address if available
+            if let baseIdent = member.base as? IdentifierExpression, let baseAddr = variableMap[baseIdent.name] {
+                let baseType = member.base.resolvedType
+                var funcName = "unknown"
+                if let structType = baseType as? StructType {
+                    funcName = "\(structType.name)_\(member.member)"
+                }
+                let args = [baseAddr] + call.arguments.map { lowerExpression($0) }
+                let resultType = call.resolvedType ?? VoidType()
+                if resultType is VoidType {
+                    let callInst = CallInst(function: funcName, arguments: args, result: nil)
+                    insert(callInst)
+                    return ConstantValue(type: VoidType(), value: ())
+                } else {
+                    let callInst = CallInst(function: funcName, arguments: args, result: nil)
+                    let result = InstructionResult(type: resultType, instruction: callInst)
+                    let callWithResult = CallInst(function: funcName, arguments: args, result: result)
+                    insert(callWithResult)
+                    return result
+                }
+            }
+        }
+
         let funcName = (call.function as? IdentifierExpression)?.name ?? "unknown"
         let resultType = call.resolvedType ?? VoidType()
 
@@ -459,6 +505,19 @@ public final class SSAFunctionBuilder {
                 insert(loadWithResult)
                 return result
             }
+        } else if let selfParam = selfParam, let structType = selfStructType,
+                  structType.fields.first(where: { $0.0 == identifier.name }) != nil {
+            // Implicit self field load
+            let fieldType = identifier.resolvedType ?? UnknownType()
+            let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [identifier.name], result: nil)
+            let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+            let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: [identifier.name], result: addrRes)
+            insert(addrWithRes)
+            let loadInst = LoadInst(address: addrRes, result: nil)
+            let loadRes = InstructionResult(type: fieldType, instruction: loadInst)
+            let loadWithRes = LoadInst(address: addrRes, result: loadRes)
+            insert(loadWithRes)
+            return loadRes
         } else {
             // Fallback for unknown identifiers
             return ConstantValue(type: identifier.resolvedType ?? IntType(), value: identifier.name)
@@ -580,6 +639,20 @@ public final class SSABuilder {
                 let functionBuilder = SSAFunctionBuilder(function: funcDecl)
                 let ssaFunc = functionBuilder.lower()
                 functions.append(ssaFunc)
+            } else if let structDecl = declaration as? StructDeclaration {
+                // Build owner struct type from fields (resolved types expected after type checking)
+                var fieldTypes: [(String, any TypeProtocol)] = []
+                for f in structDecl.fields {
+                    let t = f.type?.resolvedType ?? UnknownType()
+                    fieldTypes.append((f.name, t))
+                }
+                let ownerType = StructType(name: structDecl.name, fields: fieldTypes)
+                for method in structDecl.methods {
+                    let mangledName = "\(structDecl.name)_\(method.name)"
+                    let functionBuilder = SSAFunctionBuilder(function: method, methodOwner: ownerType, nameOverride: mangledName)
+                    let ssaFunc = functionBuilder.lower()
+                    functions.append(ssaFunc)
+                }
             }
         }
 

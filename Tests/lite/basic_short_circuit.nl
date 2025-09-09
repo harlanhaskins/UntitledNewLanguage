@@ -1,4 +1,4 @@
-// RUN: %newlang %s --emit-c 2>/dev/null | %FileCheck %s --check-prefixes CHECK-C
+// RUN: %newlang %s --emit c 2>/dev/null | %FileCheck %s --check-prefixes CHECK-C
 // RUN: %newlang %s -o %t && %t
 // Test basic short-circuiting behavior through C code generation
 

@@ -1,4 +1,4 @@
-// RUN: %newlang %s --emit-c 2>/dev/null | %FileCheck %s --check-prefixes CHECK-C
+// RUN: %newlang %s --emit c 2>/dev/null | %FileCheck %s --check-prefixes CHECK-C
 // Ensure struct declarations are emitted as typedefs before functions
 
 struct Point {
@@ -24,4 +24,3 @@ func main() -> Int32 {
 // CHECK-C:     bool a;
 // CHECK-C:     bool b;
 // CHECK-C: } Flags;
-

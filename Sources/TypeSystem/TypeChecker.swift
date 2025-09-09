@@ -284,21 +284,28 @@ public final class TypeChecker: ASTWalker {
 
     public func visit(_ node: AssignStatement) -> any TypeProtocol {
         // Check if the variable exists in the environment
-        guard let existingType = environment.lookup(node.name) else {
-            diagnostics.undefinedVariable(at: node.range, name: node.name)
-            return UnknownType()
+        if let existingType = environment.lookup(node.name) {
+            let valueType = node.value.accept(self)
+            if !valueType.isSameType(as: existingType) {
+                diagnostics.typeMismatch(at: node.range, expected: existingType, actual: valueType)
+                return UnknownType()
+            }
+            return valueType
         }
 
-        // Type check the value expression
-        let valueType = node.value.accept(self)
-
-        // Ensure the value type matches the existing variable type
-        if !valueType.isSameType(as: existingType) {
-            diagnostics.typeMismatch(at: node.range, expected: existingType, actual: valueType)
-            return UnknownType()
+        // Implicit self field assignment
+        if let ctx = currentStructContext,
+           let fieldType = ctx.fields.first(where: { $0.0 == node.name })?.1 {
+            let valueType = node.value.accept(self)
+            if !valueType.isSameType(as: fieldType) {
+                diagnostics.typeMismatch(at: node.range, expected: fieldType, actual: valueType)
+                return UnknownType()
+            }
+            return valueType
         }
 
-        return valueType
+        diagnostics.undefinedVariable(at: node.range, name: node.name)
+        return UnknownType()
     }
 
     public func visit(_ node: MemberAssignStatement) -> any TypeProtocol {

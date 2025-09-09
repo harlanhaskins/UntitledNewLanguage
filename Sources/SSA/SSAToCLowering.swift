@@ -210,7 +210,7 @@ public final class CFunctionEmitter {
             return "\(resultName) = \(op)\(operandName);"
 
         case let call as CallInst:
-            let args = call.arguments.map { getValueName($0) }.joined(separator: ", ")
+            let args = call.arguments.map { getCallArgName($0) }.joined(separator: ", ")
             if let result = call.result {
                 let resultName = variableNameMap.getTempName(for: result)
                 return "\(resultName) = \(call.function)(\(args));"
@@ -305,6 +305,15 @@ public final class CFunctionEmitter {
         default:
             return "unknown_value"
         }
+    }
+
+    private func getCallArgName(_ value: any SSAValue) -> String {
+        // When passing an alloca result (address of a local variable), we need '&local' in C
+        if let result = value as? InstructionResult, result.instruction is AllocaInst {
+            let localName = variableNameMap.getLocalVarName(for: result)
+            return "&\(localName)"
+        }
+        return getValueName(value)
     }
 
     private func getInstructionResult(_ instruction: any SSAInstruction) -> InstructionResult? {

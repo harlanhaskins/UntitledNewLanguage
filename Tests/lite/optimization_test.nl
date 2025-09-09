@@ -1,4 +1,4 @@
-// RUN: %newlang %s -O --emit-c 2>/dev/null | %FileCheck %s
+// RUN: %newlang %s -O --emit c 2>/dev/null | %FileCheck %s
 // RUN: %newlang %s -O -o /dev/null --verbose 2>&1 | %FileCheck %s --check-prefixes CHECK-VERBOSE
 // Test that -O flag enables optimizations
 

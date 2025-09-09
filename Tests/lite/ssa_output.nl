@@ -1,4 +1,4 @@
-// RUN: %newlang %s --emit-ssa 2>/dev/null | %FileCheck %s  
+// RUN: %newlang %s --emit ssa 2>/dev/null | %FileCheck %s  
 // Test SSA generation patterns for basic functions
 
 // CHECK: ssa @test : $(Int, Int) -> Int {

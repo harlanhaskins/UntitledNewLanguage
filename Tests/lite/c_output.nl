@@ -1,4 +1,4 @@
-// RUN: %newlang %s --emit-c 2>/dev/null | %FileCheck %s  
+// RUN: %newlang %s --emit c 2>/dev/null | %FileCheck %s  
 // Test C code generation patterns
 
 // CHECK: #include <stdbool.h>

@@ -32,12 +32,6 @@ struct NewLangCompiler: AsyncParsableCommand {
     @Option(help: "Emit stage: c | ssa | parse | typecheck")
     var emit: String?
 
-    // Backward-compat flags (deprecated)
-    @Flag(help: .hidden)
-    var emitC: Bool = false
-
-    @Flag(help: .hidden)
-    var emitSsa: Bool = false
 
     @Flag(name: .customShort("O"), help: "Enable optimizations (SSA passes and C compiler optimizations)")
     var optimize: Bool = false
@@ -86,19 +80,12 @@ struct NewLangCompiler: AsyncParsableCommand {
                     return .none
                 }
             }()
-            // Legacy flag mapping if --emit not provided
-            let finalStage: CompilerOptions.EmitStage = {
-                if stage != .none { return stage }
-                if emitC { return .c }
-                if emitSsa { return .ssa }
-                return .none
-            }()
 
             let compilerOptions = CompilerOptions(
                 verbose: verbose,
                 skipAnalysis: skipAnalysis,
                 analyzeOnly: analyzeOnly,
-                emitStage: finalStage,
+                emitStage: stage,
                 optimize: optimize
             )
             let compiler = CompilerDriver(options: compilerOptions)
