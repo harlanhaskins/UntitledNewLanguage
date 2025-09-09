@@ -9,14 +9,26 @@ private final class SSAValueToCNameMap {
     private var nextLocalNumber = 0
 
     func getTempName(for value: any SSAValue) -> String {
+        let id = ObjectIdentifier(value)
+        
+        if let existing = valueToName[id] {
+            return existing
+        }
+        
         let name = names.next(for: "t")
-        valueToName[ObjectIdentifier(value)] = name
+        valueToName[id] = name
         return name
     }
 
     func getLocalVarName(for value: any SSAValue) -> String {
+        let id = ObjectIdentifier(value)
+        
+        if let existing = valueToName[id] {
+            return existing
+        }
+        
         let name = names.next(for: "local")
-        valueToName[ObjectIdentifier(value)] = name
+        valueToName[id] = name
         return name
     }
 
@@ -129,16 +141,19 @@ public struct CEmitter {
         return output
     }
 
-    public func lowerFunction(_ function: SSAFunction) -> String {
+    public mutating func lowerFunction(_ function: SSAFunction) -> String {
         var output = ""
-        let nameMap = SSAValueToCNameMap()
 
-        // Use entry block parameters instead of function parameters
-        let entryBlockParams = function.blocks.first?.parameters ?? []
+        // Reset the per-function name map so that names start fresh for each
+        // lowered function and don't leak across functions.
+        self.variableNameMap = SSAValueToCNameMap()
 
+        // Use a single, consistent name map for the entire function so that
+        // parameter names, temps, and locals never collide.
         // Ensure entry block parameters get their names first
+        let entryBlockParams = function.blocks.first?.parameters ?? []
         for param in entryBlockParams {
-            _ = nameMap.getTempName(for: param)
+            _ = variableNameMap.getTempName(for: param)
         }
 
         // Generate function signature with parameter names for definition
@@ -146,7 +161,7 @@ public struct CEmitter {
         output += "\(returnTypeStr) \(function.name)("
 
         let paramStrs = entryBlockParams.map { param in
-            let paramName = nameMap.getTempName(for: param) // This will return existing name
+            let paramName = variableNameMap.getTempName(for: param) // This will return existing name
             return "\(formatCType(param.type)) \(paramName)"
         }
 
@@ -157,7 +172,7 @@ public struct CEmitter {
         }
         output += ") {\n"
 
-        // Collect all local variables needed (from alloca instructions) using same nameMap
+        // Collect all local variables needed (from alloca instructions) using same name map
         let localVars = collectLocalVariables(function)
 
         // Declare local variables
@@ -165,7 +180,7 @@ public struct CEmitter {
             output += "    \(formatCType(type)) \(varName);\n"
         }
 
-        // Collect temporary variables for instruction results using same nameMap
+        // Collect temporary variables for instruction results using same name map
         let tempVars = collectTempVariables(function)
         for (type, varName) in tempVars {
             output += "    \(formatCType(type)) \(varName);\n"

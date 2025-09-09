@@ -88,8 +88,16 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
                         return true
                     }
                 case let branchTerm as BranchTerm:
-                    if isSameValue(branchTerm.condition, value) {
-                        return true
+                    if isSameValue(branchTerm.condition, value) { return true }
+                    for arg in branchTerm.trueArguments {
+                        if isSameValue(arg, value) { return true }
+                    }
+                    for arg in branchTerm.falseArguments {
+                        if isSameValue(arg, value) { return true }
+                    }
+                case let jump as JumpTerm:
+                    for arg in jump.arguments {
+                        if isSameValue(arg, value) { return true }
                     }
                 default:
                     break

@@ -4,10 +4,10 @@
 // CHECK: ssa @test : $(Int) -> Int {
 // CHECK: entry(%{{[0-9]+}} : $Int):
 // CHECK: %{{[0-9]+}} = integer_gt %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
-// CHECK: cond_br %{{[0-9]+}} : $Bool, then{{[0-9]+}}, merge{{[0-9]+}}
-// CHECK: merge{{[0-9]+}}:
+// CHECK: cond_br %{{[0-9]+}} : $Bool, then, merge
+// CHECK: merge:
 // CHECK: return %{{[0-9]+}} : $Int
-// CHECK: then{{[0-9]+}}:
+// CHECK: then:
 // CHECK: return %{{[0-9]+}} : $Int
 
 func test(_ x: Int) -> Int {

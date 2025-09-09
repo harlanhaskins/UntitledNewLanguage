@@ -84,52 +84,52 @@ func main() -> Int32 {
     return Int32(0)
 }
 
-// CHECK-C: int64_t factorial(int64_t t0) {
-// CHECK-C:     t1 = t0 <= 1;
-// CHECK-C:     if (t1) goto then1; else goto else_block2;
+// CHECK-C: int64_t factorial(int64_t t) {
+// CHECK-C:     t1 = t <= 1;
+// CHECK-C:     if (t1) goto then; else goto else_block;
 // CHECK-C:     return 1;
 // CHECK-C:     t3 = factorial(t2);
-// CHECK-C:     t4 = t0 * t3;
+// CHECK-C:     t4 = t * t3;
 // CHECK-C:     return t4;
 // CHECK-C: }
 
-// CHECK-C: int64_t fibonacci(int64_t t0) {
-// CHECK-C:     t1 = t0 <= 1;
-// CHECK-C:     if (t1) goto then1; else goto else_block2;
-// CHECK-C:     return t0;
+// CHECK-C: int64_t fibonacci(int64_t t) {
+// CHECK-C:     t1 = t <= 1;
+// CHECK-C:     if (t1) goto then; else goto else_block;
+// CHECK-C:     return t;
 // CHECK-C:     t3 = fibonacci(t2);
 // CHECK-C:     t5 = fibonacci(t4);
 // CHECK-C:     t6 = t3 + t5;
 // CHECK-C:     return t6;
 // CHECK-C: }
 
-// CHECK-C: int64_t power(int64_t t0, int64_t t1) {
+// CHECK-C: int64_t power(int64_t t, int64_t t1) {
 // CHECK-C:     t2 = t1 == 0;
-// CHECK-C:     if (t2) goto then1; else goto cond2;
+// CHECK-C:     if (t2) goto then; else goto cond;
 // CHECK-C:     return 1;
 // CHECK-C:     t3 = t1 == 1;
-// CHECK-C:     if (t3) goto then3; else goto else_block4;
-// CHECK-C:     return t0;
-// CHECK-C:     t5 = power(t0, t4);
-// CHECK-C:     t6 = t0 * t5;
+// CHECK-C:     if (t3) goto then1; else goto else_block
+// CHECK-C:     return t;
+// CHECK-C:     t5 = power(t, t4);
+// CHECK-C:     t6 = t * t5;
 // CHECK-C:     return t6;
 // CHECK-C: }
 
-// CHECK-C: int64_t gcd(int64_t t0, int64_t t1) {
+// CHECK-C: int64_t gcd(int64_t t, int64_t t1) {
 // CHECK-C:     t2 = t1 == 0;
-// CHECK-C:     if (t2) goto then1; else goto else_block2;
-// CHECK-C:     return t0;
-// CHECK-C:     t3 = t0 % t1;
+// CHECK-C:     if (t2) goto then; else goto else_block;
+// CHECK-C:     return t;
+// CHECK-C:     t3 = t % t1;
 // CHECK-C:     t4 = gcd(t1, t3);
 // CHECK-C:     return t4;
 // CHECK-C: }
 
-// CHECK-C: int64_t sumToN(int64_t t0) {
-// CHECK-C:     t1 = t0 <= 0;
-// CHECK-C:     if (t1) goto then1; else goto else_block2;
+// CHECK-C: int64_t sumToN(int64_t t) {
+// CHECK-C:     t1 = t <= 0;
+// CHECK-C:     if (t1) goto then; else goto else_block;
 // CHECK-C:     return 0;
 // CHECK-C:     t3 = sumToN(t2);
-// CHECK-C:     t4 = t0 + t3;
+// CHECK-C:     t4 = t + t3;
 // CHECK-C:     return t4;
 // CHECK-C: }
 

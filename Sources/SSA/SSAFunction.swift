@@ -6,7 +6,7 @@ struct UniqueNameMap {
     mutating func next(for name: String) -> String {
         if let count = baseNames[name] {
             baseNames[name] = count + 1
-            return "\(name)_\(count + 1)"
+            return "\(name)\(count + 1)"
         } else {
             baseNames[name] = 0
             return name
@@ -21,32 +21,30 @@ public final class SSAFunction {
     public let parameters: [BlockParameter]
     public let returnType: any TypeProtocol
     public var blocks: [BasicBlock]
-    public var entryBlock: BasicBlock?
+    public let entryBlock = BasicBlock(name: "entry")
 
     public init(name: String, parameterTypes: [any TypeProtocol], returnType: any TypeProtocol) {
         self.name = name
         self.returnType = returnType
-        blocks = []
+        blocks = [entryBlock]
 
-        // Create function parameters as entry block parameters
-        let tempBlock = BasicBlock(name: nameMap.next(for: "entry"))
-        parameters = parameterTypes.enumerated().map { index, type in
+        // Create function parameters as entry block parameters. Use a temporary
+        // block with a fixed name that does not advance the unique name map,
+        // so the real entry created later will be named exactly "entry".
+        parameters = parameterTypes.enumerated().map { [entryBlock] index, type in
             BlockParameter(
                 type: type,
-                block: tempBlock,
+                block: entryBlock,
                 index: index
             )
         }
+        entryBlock.parameters = parameters
     }
 
     /// Add a basic block to this function
     public func addBlock(_ block: BasicBlock) {
         block.function = self
         blocks.append(block)
-
-        if entryBlock == nil {
-            entryBlock = block
-        }
     }
 
     /// Create a new basic block

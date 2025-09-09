@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "/tmp/simple.nl"
+            argument = "/Users/harlan/Developer/NewLang/Tests/lite/basic_short_circuit.nl"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument

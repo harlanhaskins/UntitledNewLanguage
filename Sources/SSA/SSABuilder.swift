@@ -1,81 +1,69 @@
 import AST
 import Types
 
-/// Builds SSA form from typed AST
-public final class SSABuilder {
-    private var currentFunction: SSAFunction?
-    private var currentBlock: BasicBlock?
+public final class SSAFunctionBuilder {
+    private let function: FunctionDeclaration
+    private let currentFunction: SSAFunction
+    private var currentBlock: BasicBlock
     private var variableMap: [String: any SSAValue] = [:]
 
-    public init() {}
+    init(function: FunctionDeclaration) {
+        self.function = function
 
-    /// Lower a list of declarations to SSA functions
-    public func lower(declarations: [any Declaration]) -> [SSAFunction] {
-        var functions: [SSAFunction] = []
-
-        for declaration in declarations {
-            if let funcDecl = declaration as? FunctionDeclaration, !funcDecl.isExtern {
-                let ssaFunc = lowerFunction(funcDecl)
-                functions.append(ssaFunc)
-            }
-        }
-
-        return functions
-    }
-
-    /// Lower a single function declaration to SSA
-    private func lowerFunction(_ funcDecl: FunctionDeclaration) -> SSAFunction {
         // Extract parameter types
-        let paramTypes = funcDecl.parameters.compactMap { param in
+        let paramTypes = function.parameters.compactMap { param in
             param.type.resolvedType
         }
 
         // Get return type
-        let returnType = funcDecl.resolvedReturnType ?? VoidType()
+        let returnType = function.resolvedReturnType ?? VoidType()
 
         // Create SSA function
         let ssaFunc = SSAFunction(
-            name: funcDecl.name,
+            name: function.name,
             parameterTypes: paramTypes,
             returnType: returnType
         )
 
-        currentFunction = ssaFunc
+        self.currentFunction = ssaFunc
+        self.currentBlock = ssaFunc.entryBlock
+    }
 
-        // Create entry block with parameters
-        let entry = ssaFunc.createBlock(name: "entry", parameterTypes: paramTypes)
-
+    /// Lower a single function declaration to SSA
+    public func lower() -> SSAFunction {
         // Map function parameters to block parameters
-        for (index, param) in funcDecl.parameters.enumerated() {
-            if index < entry.parameters.count {
-                variableMap[param.name] = entry.parameters[index]
+        for (index, param) in function.parameters.enumerated() {
+            if index < currentFunction.entryBlock.parameters.count {
+                variableMap[param.name] = currentFunction.entryBlock.parameters[index]
             }
         }
 
-        currentBlock = entry
+        currentBlock = currentFunction.entryBlock
 
         // Lower function body
-        if let body = funcDecl.body {
+        if let body = function.body {
             lowerBlock(body)
         }
 
         // If no explicit return, add appropriate return
-        if currentBlock?.terminator == nil {
-            if returnType is VoidType {
-                currentBlock?.setTerminator(ReturnTerm())
+        if currentBlock.terminator == nil {
+            if currentFunction.returnType is VoidType {
+                currentBlock.setTerminator(ReturnTerm())
             } else {
                 // Add a default return for non-void functions (typically unreachable)
-                let defaultValue = createDefaultValue(for: returnType)
-                currentBlock?.setTerminator(ReturnTerm(value: defaultValue))
+                let defaultValue = createDefaultValue(for: currentFunction.returnType)
+                currentBlock.setTerminator(ReturnTerm(value: defaultValue))
             }
         }
 
         // Clean up
-        currentFunction = nil
-        currentBlock = nil
         variableMap.removeAll()
 
-        return ssaFunc
+        return currentFunction
+    }
+
+    private func insert(_ instruction: any SSAInstruction) {
+        currentBlock.add(instruction)
     }
 
     /// Lower a block statement
@@ -108,7 +96,7 @@ public final class SSABuilder {
 
     /// Lower a variable binding (var x = expr)
     private func lowerVarBinding(_ varBinding: VarBinding) {
-        guard let originalBlock = currentBlock else { return }
+        let originalBlock = currentBlock
 
         // Get the variable type from the expression
         guard let varType = varBinding.value.resolvedType else { return }
@@ -122,11 +110,9 @@ public final class SSABuilder {
         // Store the initial value (this may change currentBlock due to short-circuiting)
         let value = lowerExpression(varBinding.value)
         let storeInst = StoreInst(address: allocaResult, value: value)
-        
+
         // Store in the current block (after expression evaluation)
-        if let currentBlock = currentBlock {
-            currentBlock.add(storeInst)
-        }
+        insert(storeInst)
 
         // Map variable name to its alloca
         variableMap[varBinding.name] = allocaResult
@@ -139,29 +125,16 @@ public final class SSABuilder {
         // Store the initial value (this may change currentBlock due to short-circuiting)
         let value = lowerExpression(assignStmt.value)
         let storeInst = StoreInst(address: address, value: value)
-        
+
         // Store in the current block (after expression evaluation)
-        if let currentBlock = currentBlock {
-            currentBlock.add(storeInst)
-        }
+        insert(storeInst)
     }
 
     /// Lower a return statement
     private func lowerReturnStatement(_ returnStmt: ReturnStatement) {
-        guard let currentBlock = currentBlock else { return }
-
         let returnValue = returnStmt.value.map { lowerExpression($0) }
         let returnTerm = ReturnTerm(value: returnValue)
-        
-        // If the block already has a terminator, it means the expression evaluation
-        // has created control flow that ends in this merge block. That's fine -
-        // we just need to replace any existing terminator with our return.
-        if currentBlock.terminator != nil {
-            // Clear the existing terminator and set our return
-            // This is safe because merge blocks shouldn't have complex terminators
-            currentBlock.clearTerminator()
-        }
-        
+
         currentBlock.setTerminator(returnTerm)
     }
 
@@ -190,10 +163,6 @@ public final class SSABuilder {
 
     /// Lower a binary expression
     private func lowerBinaryExpression(_ binary: BinaryExpression) -> any SSAValue {
-        guard let currentBlock = currentBlock else {
-            return ConstantValue(type: UnknownType(), value: "error")
-        }
-
         // Handle short-circuiting operators specially
         switch binary.operator {
         case .logicalAnd:
@@ -234,7 +203,7 @@ public final class SSABuilder {
         let binaryInst = BinaryOp(operator: op, left: left, right: right, result: nil)
         let result = InstructionResult(type: resultType, instruction: binaryInst)
         let binaryWithResult = BinaryOp(operator: op, left: left, right: right, result: result)
-        currentBlock.add(binaryWithResult)
+        insert(binaryWithResult)
 
         return result
     }
@@ -243,10 +212,6 @@ public final class SSABuilder {
     /// For &&: if left is false, return false, else evaluate right
     /// For ||: if left is true, return true, else evaluate right
     private func lowerShortCircuitOperation(_ binary: BinaryExpression, isAnd: Bool) -> any SSAValue {
-        guard let currentFunction = currentFunction, let currentBlock else {
-            return ConstantValue(type: UnknownType(), value: "error")
-        }
-
         // Evaluate left operand in current block
         let left = lowerExpression(binary.left)
 
@@ -258,19 +223,19 @@ public final class SSABuilder {
         // Create the short-circuit value and branch
         let shortCircuitValue = ConstantValue(type: BoolType(), value: !isAnd) // false for &&, true for ||
         let branch: BranchTerm
-        
+
         if isAnd {
             // &&: if true go to right block, if false short-circuit with false
-            branch = BranchTerm(condition: left, 
+            branch = BranchTerm(condition: left,
                                trueTarget: continueBlock, trueArguments: [],
                                falseTarget: mergeBlock, falseArguments: [shortCircuitValue])
         } else {
             // ||: if true short-circuit with true, if false go to right block
-            branch = BranchTerm(condition: left, 
+            branch = BranchTerm(condition: left,
                                trueTarget: mergeBlock, trueArguments: [shortCircuitValue],
                                falseTarget: continueBlock, falseArguments: [])
         }
-        
+
         currentBlock.setTerminator(branch)
 
         // Generate right operand evaluation in rightBlock
@@ -293,17 +258,13 @@ public final class SSABuilder {
         return lowerShortCircuitOperation(binary, isAnd: true)
     }
 
-    /// Lower short-circuit OR operation: left || right  
+    /// Lower short-circuit OR operation: left || right
     private func lowerShortCircuitOr(_ binary: BinaryExpression) -> any SSAValue {
         return lowerShortCircuitOperation(binary, isAnd: false)
     }
 
     /// Lower a call expression
     private func lowerCallExpression(_ call: CallExpression) -> any SSAValue {
-        guard let currentBlock = currentBlock else {
-            return ConstantValue(type: UnknownType(), value: "error")
-        }
-
         let funcName = (call.function as? IdentifierExpression)?.name ?? "unknown"
         let resultType = call.resolvedType ?? VoidType()
 
@@ -318,7 +279,7 @@ public final class SSABuilder {
             let castInst = CastInst(value: value, targetType: resultType, result: nil)
             let result = InstructionResult(type: resultType, instruction: castInst)
             let castWithResult = CastInst(value: value, targetType: resultType, result: result)
-            currentBlock.add(castWithResult)
+            insert(castWithResult)
             return result
         } else {
             // This is a regular function call
@@ -327,14 +288,14 @@ public final class SSABuilder {
             if resultType is VoidType {
                 // Void function call
                 let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
-                currentBlock.add(callInst)
+                insert(callInst)
                 return ConstantValue(type: VoidType(), value: ())
             } else {
                 // Non-void function call
                 let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
                 let result = InstructionResult(type: resultType, instruction: callInst)
                 let callWithResult = CallInst(function: funcName, arguments: arguments, result: result)
-                currentBlock.add(callWithResult)
+                insert(callWithResult)
                 return result
             }
         }
@@ -371,27 +332,19 @@ public final class SSABuilder {
 
     /// Lower a cast expression
     private func lowerCastExpression(_ cast: CastExpression) -> any SSAValue {
-        guard let currentBlock = currentBlock else {
-            return ConstantValue(type: UnknownType(), value: "error")
-        }
-
         let value = lowerExpression(cast.expression)
         let targetType = cast.resolvedType ?? IntType()
 
         let castInst = CastInst(value: value, targetType: targetType, result: nil)
         let result = InstructionResult(type: targetType, instruction: castInst)
         let castWithResult = CastInst(value: value, targetType: targetType, result: result)
-        currentBlock.add(castWithResult)
+        insert(castWithResult)
 
         return result
     }
 
     /// Lower an identifier expression (variable reference)
     private func lowerIdentifierExpression(_ identifier: IdentifierExpression) -> any SSAValue {
-        guard let currentBlock = currentBlock else {
-            return ConstantValue(type: UnknownType(), value: "error")
-        }
-
         // Check if it's in our variable map
         if let ssaValue = variableMap[identifier.name] {
             // If it's a function parameter (BlockParameter), use it directly
@@ -404,7 +357,7 @@ public final class SSABuilder {
                 let resultType = identifier.resolvedType ?? IntType()
                 let result = InstructionResult(type: resultType, instruction: loadInst)
                 let loadWithResult = LoadInst(address: ssaValue, result: result)
-                currentBlock.add(loadWithResult)
+                insert(loadWithResult)
                 return result
             }
         } else {
@@ -433,22 +386,20 @@ public final class SSABuilder {
 
     /// Lower an if statement to SSA with conditional branches
     private func lowerIfStatement(_ ifStmt: IfStatement) {
-        guard let currentFunction = currentFunction else { return }
-        
         // Create merge block that comes after all conditions
         let mergeBlock = currentFunction.createBlock(name: "merge")
-        
+
         // Start with the current block for the first condition
-        var conditionBlock = currentBlock!
-        
+        var conditionBlock = currentBlock
+
         for (index, clause) in ifStmt.clauses.enumerated() {
             // Evaluate condition in the condition block
             currentBlock = conditionBlock
             let condition = lowerExpression(clause.condition)
-            
+
             // Create then block for this clause
             let thenBlock = currentFunction.createBlock(name: "then")
-            
+
             // Create block for next condition or else block
             let nextBlock: BasicBlock
             if index < ifStmt.clauses.count - 1 {
@@ -461,7 +412,7 @@ public final class SSABuilder {
                 // No more conditions, go to merge
                 nextBlock = mergeBlock
             }
-            
+
             // Add conditional branch to current condition block
             let branch = BranchTerm(
                 condition: condition,
@@ -469,40 +420,40 @@ public final class SSABuilder {
                 falseTarget: nextBlock
             )
             conditionBlock.setTerminator(branch)
-            
+
             // Lower the then block
             currentBlock = thenBlock
             lowerBlock(clause.block)
-            
+
             // Jump to merge block if no terminator was set
-            if currentBlock?.terminator == nil {
-                currentBlock?.setTerminator(JumpTerm(target: mergeBlock))
+            if currentBlock.terminator == nil {
+                currentBlock.setTerminator(JumpTerm(target: mergeBlock))
             }
-            
+
             // Move to next condition block (unless it's the merge block)
             if nextBlock !== mergeBlock {
                 conditionBlock = nextBlock
             }
-            
+
         }
-        
+
         // Handle else block if present
         if let elseBlock = ifStmt.elseBlock {
             // The else block should be the last nextBlock we created
-            let elseBlockBasic = ifStmt.clauses.isEmpty ? currentBlock! : conditionBlock
+            let elseBlockBasic = ifStmt.clauses.isEmpty ? currentBlock : conditionBlock
             currentBlock = elseBlockBasic
             lowerBlock(elseBlock)
-            
+
             // Jump to merge block if no terminator was set
-            if currentBlock?.terminator == nil {
-                currentBlock?.setTerminator(JumpTerm(target: mergeBlock))
+            if currentBlock.terminator == nil {
+                currentBlock.setTerminator(JumpTerm(target: mergeBlock))
             }
         }
-        
+
         // Continue with merge block
         currentBlock = mergeBlock
     }
-    
+
     /// Create a default value for a given type (used for unreachable returns)
     private func createDefaultValue(for type: any TypeProtocol) -> any SSAValue {
         switch type {
@@ -514,5 +465,28 @@ public final class SSABuilder {
             // For unknown types, return 0 as a fallback
             return ConstantValue(type: type, value: 0)
         }
+    }
+}
+
+/// Builds SSA form from typed AST
+public final class SSABuilder {
+    private var currentFunction: SSAFunction?
+    private var currentBlock: BasicBlock?
+
+    public init() {}
+
+    /// Lower a list of declarations to SSA functions
+    public func lower(declarations: [any Declaration]) -> [SSAFunction] {
+        var functions: [SSAFunction] = []
+
+        for declaration in declarations {
+            if let funcDecl = declaration as? FunctionDeclaration, !funcDecl.isExtern {
+                let functionBuilder = SSAFunctionBuilder(function: funcDecl)
+                let ssaFunc = functionBuilder.lower()
+                functions.append(ssaFunc)
+            }
+        }
+
+        return functions
     }
 }

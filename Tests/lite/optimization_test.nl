@@ -13,7 +13,7 @@ func main() -> Int32 {
     return Int32(0)
 }
 
-// CHECK: int64_t simpleArithmetic(int64_t t0) {
+// CHECK: int64_t simpleArithmetic(int64_t t) {
 // CHECK:     return
 // CHECK: }
 

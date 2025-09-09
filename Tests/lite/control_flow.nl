@@ -147,18 +147,18 @@ func main() -> Int32 {
     return Int32(0)
 }
 
-// CHECK-C: int64_t classifyNumber(int64_t t0) {
+// CHECK-C: int64_t classifyNumber(int64_t t) {
 // CHECK-C:     if (t{{[0-9]+}}) goto then{{[0-9]+}}; else goto 
 // CHECK-C:     return
 // CHECK-C: }
 
-// CHECK-C: int64_t calculateGrade(int64_t t0) {
+// CHECK-C: int64_t calculateGrade(int64_t t) {
 // CHECK-C:     if (t{{[0-9]+}}) goto then{{[0-9]+}}; else goto 
 // CHECK-C:     return
 // CHECK-C: }
 
-// CHECK-C: int64_t processValue(int64_t t0, int64_t t1, bool t2) {
-// CHECK-C:     if (t{{[0-9]+}}) goto then{{[0-9]+}}; else goto 
+// CHECK-C: int64_t processValue(int64_t t, int64_t t1, bool t2) {
+// CHECK-C:     if (t{{[0-9]+}}) goto then{{[0-9]+}}; else goto
 // CHECK-C:     return
 // CHECK-C: }
 

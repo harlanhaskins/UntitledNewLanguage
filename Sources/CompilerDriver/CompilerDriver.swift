@@ -126,7 +126,7 @@ public final class CompilerDriver {
         // Step 6: Generate C code from SSA
         if options.verbose { print("Step 6: Generating C code") }
 
-        let cEmitter = CEmitter()
+        var cEmitter = CEmitter()
 
         // Generate C code in proper order: headers, externs, forward declarations, then definitions
         var cCode = ""
@@ -197,8 +197,8 @@ public final class CompilerDriver {
         let result = try await Subprocess.run(
             .name("clang"),
             arguments: .init(arguments),
-            output: .string(limit: 2048, encoding: UTF8.self),
-            error: .string(limit: 2048, encoding: UTF8.self)
+            output: .string(limit: 1_000_000, encoding: UTF8.self),
+            error: .string(limit: 1_000_000, encoding: UTF8.self)
         )
 
         if !result.terminationStatus.isSuccess {

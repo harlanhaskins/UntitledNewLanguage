@@ -87,16 +87,16 @@ func main() -> Int32 {
     return Int32(0)
 }
 
-// CHECK-C: int64_t testArithmeticPrecedence(int64_t t0, int64_t t1, int64_t t2) {
+// CHECK-C: int64_t testArithmeticPrecedence(int64_t t, int64_t t1, int64_t t2) {
 // CHECK-C:     // %result = integer_mul %left, %right
 // CHECK-C:     t{{[0-9]+}} = t1 * t2;
 // CHECK-C:     // %result = integer_add %left, %right  
-// CHECK-C:     t{{[0-9]+}} = t0 + t{{[0-9]+}};
+// CHECK-C:     t{{[0-9]+}} = t + t{{[0-9]+}};
 // CHECK-C: }
 
-// CHECK-C: bool testComparisonPrecedence(int64_t t0, int64_t t1) {
+// CHECK-C: bool testComparisonPrecedence(int64_t t, int64_t t1) {
 // CHECK-C:     // %result = integer_add %left, %right
-// CHECK-C:     t{{[0-9]+}} = t0 + 5;
+// CHECK-C:     t{{[0-9]+}} = t + 5;
 // CHECK-C:     // %result = integer_mul %left, %right
 // CHECK-C:     t{{[0-9]+}} = t1 * 2;  
 // CHECK-C:     // %result = integer_gt %left, %right
