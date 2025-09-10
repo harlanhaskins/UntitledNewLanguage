@@ -33,6 +33,7 @@ public protocol ASTWalker {
     func visit(_ node: VarBinding) -> Result
     func visit(_ node: AssignStatement) -> Result
     func visit(_ node: MemberAssignStatement) -> Result
+    func visit(_ node: LValueAssignStatement) -> Result
     func visit(_ node: ReturnStatement) -> Result
     func visit(_ node: Block) -> Result
     func visit(_ node: ExpressionStatement) -> Result

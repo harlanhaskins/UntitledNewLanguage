@@ -10,6 +10,8 @@ public enum BinaryOperator {
 public enum UnaryOperator {
     case negate
     case logicalNot
+    case addressOf
+    case dereference
 }
 
 public final class UnaryExpression: Expression {
@@ -50,13 +52,25 @@ public final class BinaryExpression: Expression {
     }
 }
 
+public struct CallArgument {
+    public let label: String?
+    public let value: any Expression
+    public let range: SourceRange
+
+    public init(label: String?, value: any Expression, range: SourceRange) {
+        self.label = label
+        self.value = value
+        self.range = range
+    }
+}
+
 public final class CallExpression: Expression {
     public let range: SourceRange
     public let function: any Expression
-    public let arguments: [any Expression]
+    public let arguments: [CallArgument]
     public var resolvedType: (any TypeProtocol)?
 
-    public init(range: SourceRange, function: any Expression, arguments: [any Expression]) {
+    public init(range: SourceRange, function: any Expression, arguments: [CallArgument]) {
         self.range = range
         self.function = function
         self.arguments = arguments

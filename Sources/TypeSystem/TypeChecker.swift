@@ -77,6 +77,34 @@ public final class TypeChecker: ASTWalker {
         }
     }
 
+    // MARK: - Pretty operator symbols
+    private func symbol(_ op: BinaryOperator) -> String {
+        switch op {
+        case .add: return "+"
+        case .subtract: return "-"
+        case .multiply: return "*"
+        case .divide: return "/"
+        case .modulo: return "%"
+        case .logicalAnd: return "&&"
+        case .logicalOr: return "||"
+        case .equal: return "=="
+        case .notEqual: return "!="
+        case .lessThan: return "<"
+        case .lessThanOrEqual: return "<="
+        case .greaterThan: return ">"
+        case .greaterThanOrEqual: return ">="
+        }
+    }
+
+    private func symbol(_ op: UnaryOperator) -> String {
+        switch op {
+        case .negate: return "-"
+        case .logicalNot: return "!"
+        case .addressOf: return "&"
+        case .dereference: return "*"
+        }
+    }
+
     private func buildStructType(from structDecl: StructDeclaration) -> StructType {
         var fieldTypes: [(String, any TypeProtocol)] = []
         for field in structDecl.fields {
@@ -94,12 +122,14 @@ public final class TypeChecker: ASTWalker {
     private func buildFunctionType(from funcDecl: FunctionDeclaration) -> FunctionType {
         var paramTypes: [any TypeProtocol] = []
         var isVariadic = false
+        var labels: [String?] = []
 
         for param in funcDecl.parameters {
             // Use resolved type if available, otherwise resolve it
             let paramType = param.type.resolvedType ?? param.type.accept(self)
             param.type.resolvedType = paramType
             paramTypes.append(paramType)
+            labels.append(param.label)
             if param.isVariadic {
                 isVariadic = true
             }
@@ -107,20 +137,22 @@ public final class TypeChecker: ASTWalker {
 
         let returnType: any TypeProtocol = funcDecl.resolvedReturnType ?? funcDecl.returnType?.accept(self) ?? VoidType()
 
-        return FunctionType(parameters: paramTypes, returnType: returnType, isVariadic: isVariadic)
+        return FunctionType(parameters: paramTypes, returnType: returnType, isVariadic: isVariadic, labels: labels)
     }
 
     private func buildMethodType(from funcDecl: FunctionDeclaration, owner: StructType) -> FunctionType {
         var paramTypes: [any TypeProtocol] = [owner]
         var isVariadic = false
+        var labels: [String?] = [nil] // implicit self has no external label
         for param in funcDecl.parameters {
             let p = param.type.resolvedType ?? param.type.accept(self)
             param.type.resolvedType = p
             paramTypes.append(p)
+            labels.append(param.label)
             if param.isVariadic { isVariadic = true }
         }
         let returnType: any TypeProtocol = funcDecl.resolvedReturnType ?? funcDecl.returnType?.accept(self) ?? VoidType()
-        return FunctionType(parameters: paramTypes, returnType: returnType, isVariadic: isVariadic)
+        return FunctionType(parameters: paramTypes, returnType: returnType, isVariadic: isVariadic, labels: labels)
     }
 
     // Diagnostic reporting is now handled directly through the diagnostics engine
@@ -283,66 +315,61 @@ public final class TypeChecker: ASTWalker {
     }
 
     public func visit(_ node: AssignStatement) -> any TypeProtocol {
-        // Check if the variable exists in the environment
-        if let existingType = environment.lookup(node.name) {
-            let valueType = node.value.accept(self)
-            if !valueType.isSameType(as: existingType) {
-                diagnostics.typeMismatch(at: node.range, expected: existingType, actual: valueType)
-                return UnknownType()
-            }
-            return valueType
-        }
-
-        // Implicit self field assignment
-        if let ctx = currentStructContext,
-           let fieldType = ctx.fields.first(where: { $0.0 == node.name })?.1 {
-            let valueType = node.value.accept(self)
-            if !valueType.isSameType(as: fieldType) {
-                diagnostics.typeMismatch(at: node.range, expected: fieldType, actual: valueType)
-                return UnknownType()
-            }
-            return valueType
-        }
-
-        diagnostics.undefinedVariable(at: node.range, name: node.name)
-        return UnknownType()
+        // Legacy path: treat as lvalue assignment to identifier
+        let target = IdentifierExpression(range: node.range, name: node.name)
+        return checkAssignment(target: target, value: node.value, range: node.range)
     }
 
     public func visit(_ node: MemberAssignStatement) -> any TypeProtocol {
-        // Check base struct type
-        guard let baseType = environment.lookup(node.baseName) else {
-            diagnostics.undefinedVariable(at: node.range, name: node.baseName)
-            return UnknownType()
+        // Legacy path: build a member access expression and delegate
+        var expr: any Expression = IdentifierExpression(range: node.range, name: node.baseName)
+        for member in node.memberPath {
+            expr = MemberAccessExpression(range: node.range, base: expr, member: member)
         }
-        guard var currentType = baseType as? StructType else {
-            diagnostics.invalidMemberAccess(at: node.range, type: baseType)
-            return UnknownType()
-        }
+        return checkAssignment(target: expr, value: node.value, range: node.range)
+    }
 
-        // Walk the path to determine final field type
-        for (index, member) in node.memberPath.enumerated() {
-            if let (_, fieldType) = currentType.fields.first(where: { $0.0 == member }) {
-                if index == node.memberPath.count - 1 {
-                    // final
-                    let valueType = node.value.accept(self)
-                    if !valueType.isSameType(as: fieldType) {
-                        diagnostics.typeMismatch(at: node.range, expected: fieldType, actual: valueType)
-                        return UnknownType()
-                    }
-                    return fieldType
-                } else if let nested = fieldType as? StructType {
-                    currentType = nested
-                } else {
-                    diagnostics.invalidMemberAccess(at: node.range, type: fieldType)
-                    return UnknownType()
-                }
-            } else {
-                diagnostics.unknownMember(at: node.range, type: currentType, member: member)
-                return UnknownType()
+    public func visit(_ node: LValueAssignStatement) -> any TypeProtocol {
+        return checkAssignment(target: node.target, value: node.value, range: node.range)
+    }
+
+    private func isLValue(_ expr: any Expression) -> (type: any TypeProtocol, ok: Bool) {
+        switch expr {
+        case let id as IdentifierExpression:
+            if let t = environment.lookup(id.name) { return (t, true) }
+            if let ctx = currentStructContext, let t = ctx.fields.first(where: { $0.0 == id.name })?.1 { return (t, true) }
+            return (UnknownType(), false)
+        case let un as UnaryExpression where un.operator == .dereference:
+            let opType = un.operand.accept(self)
+            if let p = opType as? PointerType { return (p.pointee, true) }
+            return (UnknownType(), false)
+        case let mem as MemberAccessExpression:
+            // Base must be lvalue and struct; and member must exist
+            let (baseType, baseOK) = isLValue(mem.base)
+            guard baseOK, let structType = baseType as? StructType else { return (UnknownType(), false) }
+            if let (_, fieldType) = structType.fields.first(where: { $0.0 == mem.member }) {
+                return (fieldType, true)
             }
+            return (UnknownType(), false)
+        default:
+            _ = expr.accept(self)
+            return (expr.resolvedType ?? UnknownType(), false)
         }
+    }
 
-        return UnknownType()
+    private func checkAssignment(target: any Expression, value: any Expression, range: SourceRange) -> any TypeProtocol {
+        let (targetType, ok) = isLValue(target)
+        if !ok {
+            let t = target.accept(self)
+            diagnostics.cannotAssign(at: range, type: t)
+            return UnknownType()
+        }
+        let valueType = value.accept(self)
+        if !valueType.isSameType(as: targetType) {
+            diagnostics.typeMismatch(at: range, expected: targetType, actual: valueType)
+            return UnknownType()
+        }
+        return valueType
     }
 
     public func visit(_ node: ReturnStatement) -> any TypeProtocol {
@@ -377,20 +404,17 @@ public final class TypeChecker: ASTWalker {
             } else if leftType is IntType || leftType is Int8Type || leftType is Int32Type {
                 resultType = leftType
             } else {
-                diagnostics.invalidOperation(at: node.range, operation: "\(node.operator)", type: leftType)
+                diagnostics.invalidBinaryOperands(at: node.range, op: symbol(node.operator), lhs: leftType, rhs: rightType)
                 resultType = UnknownType()
             }
 
         case .logicalAnd, .logicalOr:
             // Logical operations require bool operands and result in bool
-            if !(leftType is BoolType) {
-                diagnostics.invalidOperation(at: node.left.range, operation: "\(node.operator)", type: leftType)
-                resultType = UnknownType()
-            } else if !(rightType is BoolType) {
-                diagnostics.invalidOperation(at: node.right.range, operation: "\(node.operator)", type: rightType)
-                resultType = UnknownType()
-            } else {
+            if leftType is BoolType && rightType is BoolType {
                 resultType = BoolType()
+            } else {
+                diagnostics.invalidBinaryOperands(at: node.range, op: symbol(node.operator), lhs: leftType, rhs: rightType)
+                resultType = UnknownType()
             }
 
         case .equal, .notEqual, .lessThan, .lessThanOrEqual, .greaterThan, .greaterThanOrEqual:
@@ -401,7 +425,7 @@ public final class TypeChecker: ASTWalker {
             } else if leftType is IntType || leftType is Int8Type || leftType is Int32Type || leftType is BoolType {
                 resultType = BoolType()
             } else {
-                diagnostics.invalidOperation(at: node.range, operation: "\(node.operator)", type: leftType)
+                diagnostics.invalidBinaryOperands(at: node.range, op: symbol(node.operator), lhs: leftType, rhs: rightType)
                 resultType = UnknownType()
             }
         }
@@ -420,14 +444,30 @@ public final class TypeChecker: ASTWalker {
             if operandType is IntType || operandType is Int8Type || operandType is Int32Type {
                 resultType = operandType
             } else {
-                diagnostics.invalidOperation(at: node.range, operation: "unary -", type: operandType)
+                diagnostics.invalidUnaryOperand(at: node.range, op: "-", type: operandType)
                 resultType = UnknownType()
             }
         case .logicalNot:
             if operandType is BoolType {
                 resultType = BoolType()
             } else {
-                diagnostics.invalidOperation(at: node.range, operation: "!", type: operandType)
+                diagnostics.invalidUnaryOperand(at: node.range, op: "!", type: operandType)
+                resultType = UnknownType()
+            }
+        case .dereference:
+            if let ptr = operandType as? PointerType {
+                resultType = ptr.pointee
+            } else {
+                diagnostics.cannotDereference(at: node.range, type: operandType)
+                resultType = UnknownType()
+            }
+        case .addressOf:
+            // Require operand be an lvalue; result is pointer to its type
+            let (lvType, ok) = isLValue(node.operand)
+            if ok {
+                resultType = PointerType(pointee: lvType)
+            } else {
+                diagnostics.cannotTakeAddress(at: node.range, type: operandType)
                 resultType = UnknownType()
             }
         }
@@ -448,8 +488,29 @@ public final class TypeChecker: ASTWalker {
                 if expectedArgCount != actualArgCount {
                     diagnostics.argumentCountMismatch(at: node.range, expected: expectedArgCount, actual: actualArgCount)
                 }
+                // Check labels and types (excluding self)
+                let labels = Array(methodType.labels.dropFirst())
+                var anyLabelMismatch = false
                 for (index, arg) in node.arguments.enumerated() {
-                    let argType = arg.accept(self)
+                    let argType = arg.value.accept(self)
+                    if index < labels.count {
+                        if let expectedLabel = labels[index] {
+                            if let got = arg.label {
+                                if got != expectedLabel {
+                                    diagnostics.incorrectArgumentLabel(at: arg.range, expected: expectedLabel, got: got)
+                                    anyLabelMismatch = true
+                                }
+                            } else {
+                                diagnostics.missingArgumentLabel(at: arg.range, expected: expectedLabel)
+                                anyLabelMismatch = true
+                            }
+                        } else {
+                            if let got = arg.label {
+                                diagnostics.unexpectedArgumentLabel(at: arg.range, got: got)
+                                anyLabelMismatch = true
+                            }
+                        }
+                    }
                     if index + 1 < methodType.parameters.count {
                         let expectedType = methodType.parameters[index + 1]
                         if !argType.isSameType(as: expectedType) {
@@ -457,8 +518,16 @@ public final class TypeChecker: ASTWalker {
                         }
                     }
                 }
+                // Order diagnostic: if sets of provided labels and expected labels (non-nil) match, but order differs
+                let expectedNonNil = labels.compactMap { $0 }
+                let gotNonNil = node.arguments.compactMap { $0.label }
+                if !expectedNonNil.isEmpty,
+                   Set(expectedNonNil) == Set(gotNonNil),
+                   expectedNonNil != gotNonNil {
+                    diagnostics.argumentLabelOrderMismatch(at: node.range, expected: expectedNonNil, got: gotNonNil)
+                }
                 // Propagate member access expression type for AST printing
-                let exposed = FunctionType(parameters: Array(methodType.parameters.dropFirst()), returnType: methodType.returnType, isVariadic: methodType.isVariadic)
+                let exposed = FunctionType(parameters: Array(methodType.parameters.dropFirst()), returnType: methodType.returnType, isVariadic: methodType.isVariadic, labels: Array(methodType.labels.dropFirst()))
                 memberAccess.resolvedType = exposed
                 node.resolvedType = methodType.returnType
                 return methodType.returnType
@@ -480,11 +549,29 @@ public final class TypeChecker: ASTWalker {
                 diagnostics.argumentCountMismatch(at: node.range, expected: expectedArgCount, actual: actualArgCount)
             }
 
-            // Check argument types (up to the number of declared parameters)
+            // Check labels and argument types (up to the number of declared parameters)
+            var anyLabelMismatch = false
             for (index, arg) in node.arguments.enumerated() {
-                let argType = arg.accept(self)
+                let argType = arg.value.accept(self)
                 if index < funcType.parameters.count {
                     let expectedType = funcType.parameters[index]
+                    // Label checking
+                    if index < funcType.labels.count {
+                        if let expectedLabel = funcType.labels[index] {
+                            if let got = arg.label {
+                                if got != expectedLabel {
+                                    diagnostics.incorrectArgumentLabel(at: arg.range, expected: expectedLabel, got: got)
+                                    anyLabelMismatch = true
+                                }
+                            } else {
+                                diagnostics.missingArgumentLabel(at: arg.range, expected: expectedLabel)
+                                anyLabelMismatch = true
+                            }
+                        } else if let got = arg.label {
+                            diagnostics.unexpectedArgumentLabel(at: arg.range, got: got)
+                            anyLabelMismatch = true
+                        }
+                    }
 
                     if expectedType is CVarArgsType {
                         // For CVarArgs parameters, any type is acceptable
@@ -498,6 +585,14 @@ public final class TypeChecker: ASTWalker {
                     diagnostics.variadicArgumentType(at: arg.range, type: argType)
                 }
             }
+            // Order diagnostic on free functions
+            let expectedNonNil = funcType.labels.compactMap { $0 }
+            let gotNonNil = node.arguments.compactMap { $0.label }
+            if !expectedNonNil.isEmpty,
+               Set(expectedNonNil) == Set(gotNonNil),
+               expectedNonNil != gotNonNil {
+                diagnostics.argumentLabelOrderMismatch(at: node.range, expected: expectedNonNil, got: gotNonNil)
+            }
 
             resultType = funcType.returnType
         } else {
@@ -506,7 +601,7 @@ public final class TypeChecker: ASTWalker {
                 if let targetType = environment.lookup(identifierExpr.name) {
                     // This is a type cast
                     if node.arguments.count == 1 {
-                        _ = node.arguments[0].accept(self)
+                        _ = node.arguments[0].value.accept(self)
                         // For now, allow any integer to integer conversion
                         resultType = targetType
                     } else {
@@ -606,9 +701,8 @@ public final class TypeChecker: ASTWalker {
     public func visit(_ node: IfStatement) -> any TypeProtocol {
         for clause in node.clauses {
             let conditionType = clause.condition.accept(self)
-            guard conditionType is BoolType else {
-                // TODO: Error on non-boolean conditions
-                continue
+            if !(conditionType is BoolType) {
+                diagnostics.nonBooleanCondition(at: clause.condition.range, type: conditionType)
             }
             _ = clause.block.accept(self)
         }

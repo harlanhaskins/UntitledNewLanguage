@@ -58,7 +58,13 @@ public final class CompilerDriver {
         // Step 3: Parse the tokens
         if options.verbose { print("Step 3: Parsing") }
         let parser = Parser(tokens: tokens)
-        let ast = try parser.parse()
+        let ast: [any Declaration]
+        do {
+            ast = try parser.parse()
+        } catch let err as ParseError {
+            print(err.description)
+            throw CompilerError.parseFailed(err.description)
+        }
 
         if options.emitStage == .parse {
             print(ASTPrinter.print(declarations: ast, includeTypes: false))
@@ -85,8 +91,16 @@ public final class CompilerDriver {
 
         // Step 5: Lower AST to SSA
         if options.verbose { print("Step 5: Lowering to SSA") }
-        let ssaBuilder = SSABuilder()
+        let ssaLoweringDiagnostics = DiagnosticEngine()
+        let ssaBuilder = SSABuilder(diagnostics: ssaLoweringDiagnostics)
         var ssaFunctions = ssaBuilder.lower(declarations: ast)
+
+        if ssaLoweringDiagnostics.hasErrors {
+            for error in ssaLoweringDiagnostics.errors {
+                print("Error: \(error)")
+            }
+            throw CompilerError.loweringFailed
+        }
 
         // Step 5a: Run SSA passes for analysis and optimization
         if !options.skipAnalysis {
@@ -227,6 +241,8 @@ public enum CompilerError: Error, CustomStringConvertible {
     case clangFailed(String)
     case fileNotFound(String)
     case typeCheckingFailed
+    case loweringFailed
+    case parseFailed(String)
 
     public var description: String {
         switch self {
@@ -236,6 +252,10 @@ public enum CompilerError: Error, CustomStringConvertible {
             return "File not found: \(path)"
         case .typeCheckingFailed:
             return "Type checking failed"
+        case .loweringFailed:
+            return "Lowering to SSA failed"
+        case let .parseFailed(msg):
+            return "Parse failed: \(msg)"
         }
     }
 }

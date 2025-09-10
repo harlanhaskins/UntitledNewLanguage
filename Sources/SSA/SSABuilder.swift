@@ -1,3 +1,4 @@
+import Base
 import AST
 import Types
 
@@ -8,8 +9,9 @@ public final class SSAFunctionBuilder {
     private var variableMap: [String: any SSAValue] = [:]
     private let selfStructType: StructType?
     private var selfParam: (any SSAValue)? = nil
+    private let diagnostics: DiagnosticEngine
 
-    init(function: FunctionDeclaration, methodOwner: StructType? = nil, nameOverride: String? = nil) {
+    init(function: FunctionDeclaration, methodOwner: StructType? = nil, nameOverride: String? = nil, diagnostics: DiagnosticEngine) {
         self.function = function
 
         // Extract parameter types
@@ -32,6 +34,7 @@ public final class SSAFunctionBuilder {
         self.currentFunction = ssaFunc
         self.currentBlock = ssaFunc.entryBlock
         self.selfStructType = methodOwner
+        self.diagnostics = diagnostics
     }
 
     /// Lower a single function declaration to SSA
@@ -46,6 +49,23 @@ public final class SSAFunctionBuilder {
             let idx = index + paramIndexOffset
             if idx < currentFunction.entryBlock.parameters.count {
                 variableMap[param.name] = currentFunction.entryBlock.parameters[idx]
+            }
+        }
+
+        // Unconditionally make allocas for all parameters (excluding implicit self)
+        if !function.parameters.isEmpty {
+            for (index, param) in function.parameters.enumerated() {
+                let idx = index + paramIndexOffset
+                guard idx < currentFunction.entryBlock.parameters.count else { continue }
+                let incoming = currentFunction.entryBlock.parameters[idx]
+                let pType: any TypeProtocol = param.type.resolvedType ?? UnknownType()
+                let alloca = AllocaInst(allocatedType: pType, userProvidedName: param.name, result: nil)
+                let allocaRes = InstructionResult(type: PointerType(pointee: pType), instruction: alloca)
+                let allocaWithRes = AllocaInst(allocatedType: pType, userProvidedName: param.name, result: allocaRes)
+                currentBlock.add(allocaWithRes)
+                let store = StoreInst(address: allocaRes, value: incoming)
+                currentBlock.add(store)
+                variableMap[param.name] = allocaRes
             }
         }
 
@@ -73,6 +93,8 @@ public final class SSAFunctionBuilder {
         return currentFunction
     }
 
+    // (no parametersNeedingAlloca; we always alloca parameters now)
+
     private func insert(_ instruction: any SSAInstruction) {
         currentBlock.add(instruction)
     }
@@ -93,6 +115,8 @@ public final class SSAFunctionBuilder {
             lowerAssignStatement(assignStmt)
         case let mAssign as MemberAssignStatement:
             lowerMemberAssignStatement(mAssign)
+        case let lvAssign as LValueAssignStatement:
+            lowerLValueAssign(lvAssign)
         case let returnStmt as ReturnStatement:
             lowerReturnStatement(returnStmt)
         case let exprStmt as ExpressionStatement:
@@ -140,7 +164,7 @@ public final class SSAFunctionBuilder {
 
     /// Lower an assignment statement (x = expr)
     private func lowerAssignStatement(_ assignStmt: AssignStatement) {
-        if let address = variableMap[assignStmt.name] {
+        if let address = variableMap[assignStmt.name], address.type is PointerType {
             let value = lowerExpression(assignStmt.value)
             let storeInst = StoreInst(address: address, value: value)
             insert(storeInst)
@@ -162,7 +186,7 @@ public final class SSAFunctionBuilder {
 
     /// Lower a member assignment statement (p.x.y = value)
     private func lowerMemberAssignStatement(_ stmt: MemberAssignStatement) {
-        guard let baseAddr = variableMap[stmt.baseName] else { return }
+        guard let baseAddr = variableMap[stmt.baseName], baseAddr.type is PointerType else { return }
         // Compute the address of the nested field
         let fieldType = stmt.value.resolvedType ?? UnknownType()
         let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: stmt.memberPath, result: nil)
@@ -174,6 +198,19 @@ public final class SSAFunctionBuilder {
         let value = lowerExpression(stmt.value)
         let storeInst = StoreInst(address: addrRes, value: value)
         insert(storeInst)
+    }
+
+    /// Lower a general assignment with an arbitrary lvalue target
+    private func lowerLValueAssign(_ stmt: LValueAssignStatement) {
+        if let address = lowerAddress(of: stmt.target) {
+            let value = lowerExpression(stmt.value)
+            let storeInst = StoreInst(address: address, value: value)
+            insert(storeInst)
+        } else {
+            let t = (stmt.target as any Expression).resolvedType ?? UnknownType()
+            diagnostics.ssaCannotStore(at: stmt.range, type: t)
+            _ = lowerExpression(stmt.value)
+        }
     }
 
     /// Lower a return statement
@@ -261,20 +298,101 @@ public final class SSAFunctionBuilder {
 
     /// Lower a unary expression
     private func lowerUnaryExpression(_ unary: UnaryExpression) -> any SSAValue {
-        let operand = lowerExpression(unary.operand)
-
-        let op: UnaryOp.Operator
         switch unary.operator {
-        case .negate: op = .negate
-        case .logicalNot: op = .logicalNot
+        case .negate, .logicalNot:
+            let operand = lowerExpression(unary.operand)
+            let op: UnaryOp.Operator = (unary.operator == .negate) ? .negate : .logicalNot
+            let resultType = unary.resolvedType ?? operand.type
+            let unaryInst = UnaryOp(operator: op, operand: operand, result: nil)
+            let result = InstructionResult(type: resultType, instruction: unaryInst)
+            let unaryWithResult = UnaryOp(operator: op, operand: operand, result: result)
+            insert(unaryWithResult)
+            return result
+        case .dereference:
+            // Lower operand to an address and load from it
+            let addressValue = lowerExpression(unary.operand)
+            if !(addressValue.type is PointerType) {
+                let t = (unary.operand as any Expression).resolvedType ?? addressValue.type
+                diagnostics.ssaDereferenceNonPointer(at: unary.range, type: t)
+                return ConstantValue(type: unary.resolvedType ?? UnknownType(), value: "error")
+            }
+            let resultType = unary.resolvedType ?? UnknownType()
+            let loadInst = LoadInst(address: addressValue, result: nil)
+            let result = InstructionResult(type: resultType, instruction: loadInst)
+            let loadWithResult = LoadInst(address: addressValue, result: result)
+            insert(loadWithResult)
+            return result
+        case .addressOf:
+            // Compute address of lvalue operand
+            if let addr = lowerAddress(of: unary.operand) {
+                return addr
+            } else {
+                let t = (unary.operand as any Expression).resolvedType ?? UnknownType()
+                diagnostics.ssaAddressOfNonLValue(at: unary.range, type: t)
+                return ConstantValue(type: unary.resolvedType ?? UnknownType(), value: "error")
+            }
+        }
+    }
+
+    /// Compute the address of an lvalue expression, if possible
+    private func lowerAddress(of expr: any Expression) -> (any SSAValue)? {
+        // &identifier
+        if let ident = expr as? IdentifierExpression {
+            if let ssaValue = variableMap[ident.name] {
+                // Only local variables (alloca) have addresses; block parameters do not
+                if ssaValue is BlockParameter {
+                    return nil
+                }
+                return ssaValue
+            } else if let selfParam = selfParam, let structType = selfStructType,
+                      structType.fields.first(where: { $0.0 == ident.name }) != nil {
+                // &field inside method (implicit self)
+                let fieldType = ident.resolvedType ?? UnknownType()
+                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [ident.name], result: nil)
+                let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+                let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: [ident.name], result: addrRes)
+                insert(addrWithRes)
+                return addrRes
+            }
+            return nil
         }
 
-        let resultType = unary.resolvedType ?? operand.type
-        let unaryInst = UnaryOp(operator: op, operand: operand, result: nil)
-        let result = InstructionResult(type: resultType, instruction: unaryInst)
-        let unaryWithResult = UnaryOp(operator: op, operand: operand, result: result)
-        insert(unaryWithResult)
-        return result
+        // Address of member chain or plain member lvalue
+        if let member = expr as? MemberAccessExpression {
+            // Flatten path
+            var path: [String] = []
+            var baseExpr: any Expression = member
+            while let mem = baseExpr as? MemberAccessExpression {
+                path.insert(mem.member, at: 0)
+                baseExpr = mem.base
+            }
+
+            if let baseIdent = baseExpr as? IdentifierExpression, let baseAddr = variableMap[baseIdent.name] {
+                // Only if base is an alloca (not a parameter)
+                if baseAddr is BlockParameter { return nil }
+                let fieldType = member.resolvedType ?? UnknownType()
+                let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: nil)
+                let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+                let addrWithRes = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: addrRes)
+                insert(addrWithRes)
+                return addrRes
+            } else if let selfParam = selfParam, let _ = selfStructType {
+                let fieldType = member.resolvedType ?? UnknownType()
+                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: path, result: nil)
+                let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
+                let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: path, result: addrRes)
+                insert(addrWithRes)
+                return addrRes
+            }
+        }
+
+        // Address of dereference target: *p  => address is value of p
+        if let un = expr as? UnaryExpression, un.operator == .dereference {
+            let ptr = lowerExpression(un.operand)
+            return ptr
+        }
+
+        return nil
     }
 
     /// Lower a binary expression
@@ -394,7 +512,7 @@ public final class SSAFunctionBuilder {
                 if let structType = baseType as? StructType {
                     funcName = "\(structType.name)_\(member.member)"
                 }
-                let args = [baseAddr] + call.arguments.map { lowerExpression($0) }
+                let args = [baseAddr] + call.arguments.map { lowerExpression($0.value) }
                 let resultType = call.resolvedType ?? VoidType()
                 if resultType is VoidType {
                     let callInst = CallInst(function: funcName, arguments: args, result: nil)
@@ -420,7 +538,7 @@ public final class SSAFunctionBuilder {
                 return ConstantValue(type: UnknownType(), value: "error")
             }
 
-            let value = lowerExpression(call.arguments[0])
+            let value = lowerExpression(call.arguments[0].value)
             let castInst = CastInst(value: value, targetType: resultType, result: nil)
             let result = InstructionResult(type: resultType, instruction: castInst)
             let castWithResult = CastInst(value: value, targetType: resultType, result: result)
@@ -428,7 +546,7 @@ public final class SSAFunctionBuilder {
             return result
         } else {
             // This is a regular function call
-            let arguments = call.arguments.map { lowerExpression($0) }
+            let arguments = call.arguments.map { lowerExpression($0.value) }
 
             if resultType is VoidType {
                 // Void function call
@@ -498,12 +616,12 @@ public final class SSAFunctionBuilder {
             }
             // If it's a local variable (alloca result), load from it
             else {
-                let loadInst = LoadInst(address: ssaValue, result: nil)
-                let resultType = identifier.resolvedType ?? IntType()
-                let result = InstructionResult(type: resultType, instruction: loadInst)
-                let loadWithResult = LoadInst(address: ssaValue, result: result)
-                insert(loadWithResult)
-                return result
+            let loadInst = LoadInst(address: ssaValue, result: nil)
+            let resultType = identifier.resolvedType ?? IntType()
+            let result = InstructionResult(type: resultType, instruction: loadInst)
+            let loadWithResult = LoadInst(address: ssaValue, result: result)
+            insert(loadWithResult)
+            return result
             }
         } else if let selfParam = selfParam, let structType = selfStructType,
                   structType.fields.first(where: { $0.0 == identifier.name }) != nil {
@@ -519,8 +637,9 @@ public final class SSAFunctionBuilder {
             insert(loadWithRes)
             return loadRes
         } else {
-            // Fallback for unknown identifiers
-            return ConstantValue(type: identifier.resolvedType ?? IntType(), value: identifier.name)
+            // Unknown identifier at lowering time; report and return error value
+            diagnostics.ssaCannotComputeAddress(at: identifier.range, type: identifier.resolvedType ?? UnknownType())
+            return ConstantValue(type: identifier.resolvedType ?? UnknownType(), value: "error")
         }
     }
 
@@ -627,8 +746,11 @@ public final class SSAFunctionBuilder {
 public final class SSABuilder {
     private var currentFunction: SSAFunction?
     private var currentBlock: BasicBlock?
+    public let diagnostics: DiagnosticEngine
 
-    public init() {}
+    public init(diagnostics: DiagnosticEngine = DiagnosticEngine()) {
+        self.diagnostics = diagnostics
+    }
 
     /// Lower a list of declarations to SSA functions
     public func lower(declarations: [any Declaration]) -> [SSAFunction] {
@@ -636,7 +758,7 @@ public final class SSABuilder {
 
         for declaration in declarations {
             if let funcDecl = declaration as? FunctionDeclaration, !funcDecl.isExtern {
-                let functionBuilder = SSAFunctionBuilder(function: funcDecl)
+                let functionBuilder = SSAFunctionBuilder(function: funcDecl, diagnostics: diagnostics)
                 let ssaFunc = functionBuilder.lower()
                 functions.append(ssaFunc)
             } else if let structDecl = declaration as? StructDeclaration {
@@ -649,7 +771,7 @@ public final class SSABuilder {
                 let ownerType = StructType(name: structDecl.name, fields: fieldTypes)
                 for method in structDecl.methods {
                     let mangledName = "\(structDecl.name)_\(method.name)"
-                    let functionBuilder = SSAFunctionBuilder(function: method, methodOwner: ownerType, nameOverride: mangledName)
+                    let functionBuilder = SSAFunctionBuilder(function: method, methodOwner: ownerType, nameOverride: mangledName, diagnostics: diagnostics)
                     let ssaFunc = functionBuilder.lower()
                     functions.append(ssaFunc)
                 }

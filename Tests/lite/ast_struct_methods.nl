@@ -27,7 +27,7 @@ func main() -> Int32 { return Int32(0) }
 // CHECK-TC:   (field y: Int)
 // CHECK-TC:   (func sum (params) (return Int)
 // CHECK-TC:     (block
-// CHECK-TC:       (return (bin (id x: Int) add (id y: Int): Int))
+// CHECK-TC:       (return (bin (id x: Int) + (id y: Int): Int))
 // CHECK-TC:   (func add (params (dx: Int) (dy: Int)) (return Int)
 // CHECK-TC:     (block
-// CHECK-TC:       (return (bin (bin (id x: Int) add (id dx: Int): Int) add (bin (id y: Int) add (id dy: Int): Int): Int))
+// CHECK-TC:       (return (bin (bin (id x: Int) + (id dx: Int): Int) + (bin (id y: Int) + (id dy: Int): Int): Int))

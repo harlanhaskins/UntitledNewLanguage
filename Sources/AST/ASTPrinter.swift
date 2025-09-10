@@ -11,6 +11,33 @@ public enum ASTPrinter {
         return out.joined(separator: "\n")
     }
 
+    private static func symbol(_ op: BinaryOperator) -> String {
+        switch op {
+        case .add: return "+"
+        case .subtract: return "-"
+        case .multiply: return "*"
+        case .divide: return "/"
+        case .modulo: return "%"
+        case .logicalAnd: return "&&"
+        case .logicalOr: return "||"
+        case .equal: return "=="
+        case .notEqual: return "!="
+        case .lessThan: return "<"
+        case .lessThanOrEqual: return "<="
+        case .greaterThan: return ">"
+        case .greaterThanOrEqual: return ">="
+        }
+    }
+
+    private static func symbol(_ op: UnaryOperator) -> String {
+        switch op {
+        case .negate: return "-"
+        case .logicalNot: return "!"
+        case .addressOf: return "&"
+        case .dereference: return "*"
+        }
+    }
+
     private static func printDecl(_ decl: any Declaration, includeTypes: Bool, indent: Int) -> String {
         let pad = String(repeating: " ", count: indent)
         switch decl {
@@ -83,6 +110,8 @@ public enum ASTPrinter {
         case let ma as MemberAssignStatement:
             let path = ([ma.baseName] + ma.memberPath).joined(separator: ".")
             return "\(pad)(assign \(path) = \(printExpr(ma.value, includeTypes: includeTypes)))"
+        case let la as LValueAssignStatement:
+            return "\(pad)(assign \(printExpr(la.target, includeTypes: includeTypes)) = \(printExpr(la.value, includeTypes: includeTypes)))"
         case let r as ReturnStatement:
             if let v = r.value {
                 return "\(pad)(return \(printExpr(v, includeTypes: includeTypes)))"
@@ -121,11 +150,15 @@ public enum ASTPrinter {
         case let bl as BooleanLiteralExpression:
             return "(bool \(bl.value)\(typeSuffix))"
         case let bin as BinaryExpression:
-            return "(bin \(printExpr(bin.left, includeTypes: includeTypes)) \(bin.`operator`) \(printExpr(bin.right, includeTypes: includeTypes))\(typeSuffix))"
+            return "(bin \(printExpr(bin.left, includeTypes: includeTypes)) \(symbol(bin.`operator`)) \(printExpr(bin.right, includeTypes: includeTypes))\(typeSuffix))"
         case let un as UnaryExpression:
-            return "(un \(un.`operator`) \(printExpr(un.operand, includeTypes: includeTypes))\(typeSuffix))"
+            return "(un \(symbol(un.`operator`)) \(printExpr(un.operand, includeTypes: includeTypes))\(typeSuffix))"
         case let call as CallExpression:
-            let args = call.arguments.map { printExpr($0, includeTypes: includeTypes) }.joined(separator: " ")
+            let args = call.arguments.map { arg in
+                let val = printExpr(arg.value, includeTypes: includeTypes)
+                if let l = arg.label { return "\(l): \(val)" }
+                return val
+            }.joined(separator: " ")
             return "(call \(printExpr(call.function, includeTypes: includeTypes)) [\(args)]\(typeSuffix))"
         case let mem as MemberAccessExpression:
             return "(member \(printExpr(mem.base, includeTypes: includeTypes)).\(mem.member)\(typeSuffix))"
@@ -136,4 +169,3 @@ public enum ASTPrinter {
         }
     }
 }
-

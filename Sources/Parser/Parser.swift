@@ -147,8 +147,8 @@ public final class Parser {
 
             // Check if this is just a single identifier (no label) or label + name
             if case .colon = peek().kind {
-                // Single identifier followed by colon = no label, this is the name
-                label = nil
+                // Single identifier followed by colon = external label equals name
+                label = labelName
                 name = labelName
             } else if case let .identifier(paramName) = peek().kind {
                 // Two identifiers = label + name
@@ -255,9 +255,18 @@ public final class Parser {
             return try parseIfStatement()
         }
 
-        // Check for assignment: identifier (= or .memberChain =)
-        if isIdentifier(), (checkAhead(.assign) || isMemberAssignAhead()) {
-            return try parseAssignStatement()
+        // Attempt general lvalue assignment: <lvalue> '=' expr
+        if canStartLValue() {
+            let saved = current
+            if let lvalue = try? parseLValue(), check(.assign) {
+                _ = advance() // consume '='
+                let value = try parseExpression()
+                let range = SourceRange(start: lvalue.range.start, end: value.range.end)
+                return LValueAssignStatement(range: range, target: lvalue, value: value)
+            } else {
+                // Not an assignment; rewind and treat as expression statement
+                current = saved
+            }
         }
 
         // Expression statement (like function calls)
@@ -372,6 +381,65 @@ public final class Parser {
         return false
     }
 
+    // MARK: - LValue Parsing
+
+    private func canStartLValue() -> Bool {
+        if isAtEnd() { return false }
+        switch peek().kind {
+        case .identifier, .star, .leftParen:
+            return true
+        default:
+            return false
+        }
+    }
+
+    // Parse an lvalue expression supporting identifiers, dereference, member access, and pointer member access
+    private func parseLValue() throws -> any Expression {
+        // Parse base of lvalue: either *lvalue, (lvalue), or identifier
+        let start = peek().range.start
+        var expr: any Expression
+        if match(.star) {
+            let operand = try parseLValue()
+            let range = SourceRange(start: start, end: operand.range.end)
+            expr = UnaryExpression(range: range, operator: .dereference, operand: operand)
+        } else if match(.leftParen) {
+            let inner = try parseLValue()
+            _ = try consume(.rightParen, "Expected ')' in lvalue")
+            expr = inner
+        } else if case let .identifier(name) = peek().kind {
+            let tok = advance()
+            expr = IdentifierExpression(range: tok.range, name: name)
+        } else {
+            throw ParseError.unexpectedToken(peek())
+        }
+
+        // Handle chained . and -> member access
+        loop: while true {
+            if match(.dot) {
+                guard case let .identifier(memberName) = peek().kind else {
+                    throw ParseError.expectedIdentifier(peek())
+                }
+                let memberTok = advance()
+                let range = SourceRange(start: expr.range.start, end: memberTok.range.end)
+                expr = MemberAccessExpression(range: range, base: expr, member: memberName)
+                continue
+            }
+            if match(.arrow) {
+                guard case let .identifier(memberName) = peek().kind else {
+                    throw ParseError.expectedIdentifier(peek())
+                }
+                let memberTok = advance()
+                let derefBase = UnaryExpression(range: SourceRange(start: expr.range.start, end: expr.range.end), operator: .dereference, operand: expr)
+                let range = SourceRange(start: expr.range.start, end: memberTok.range.end)
+                expr = MemberAccessExpression(range: range, base: derefBase, member: memberName)
+                continue
+            }
+            break loop
+        }
+
+        return expr
+    }
+
     private func parseReturnStatement() throws -> ReturnStatement {
         let start = previous().range.start
 
@@ -431,13 +499,29 @@ public final class Parser {
             return UnaryExpression(range: range, operator: .logicalNot, operand: operand)
         }
 
+        if match(.star) {
+            // Dereference
+            let start = previous().range.start
+            let operand = try parseUnaryOrPrimary()
+            let range = SourceRange(start: start, end: operand.range.end)
+            return UnaryExpression(range: range, operator: .dereference, operand: operand)
+        }
+
+        if match(.ampersand) {
+            // Address-of
+            let start = previous().range.start
+            let operand = try parseUnaryOrPrimary()
+            let range = SourceRange(start: start, end: operand.range.end)
+            return UnaryExpression(range: range, operator: .addressOf, operand: operand)
+        }
+
         return try parseCallOrPrimary()
     }
 
     private func parseCallOrPrimary() throws -> any Expression {
         var expr = try parsePrimary()
 
-        // Handle chained member access and function calls
+        // Handle chained member access, pointer member access (->), and function calls
         loop: while true {
             if match(.dot) {
                 // Member access: expr.identifier
@@ -451,14 +535,40 @@ public final class Parser {
                 continue
             }
 
+            if match(.arrow) {
+                // Pointer member access: expr->identifier == (*expr).identifier
+                let start = expr.range.start
+                guard case let .identifier(memberName) = peek().kind else {
+                    throw ParseError.expectedIdentifier(peek())
+                }
+                let memberTok = advance()
+                let derefBase = UnaryExpression(range: SourceRange(start: start, end: expr.range.end), operator: .dereference, operand: expr)
+                let range = SourceRange(start: start, end: memberTok.range.end)
+                expr = MemberAccessExpression(range: range, base: derefBase, member: memberName)
+                continue
+            }
+
             if match(.leftParen) {
                 // Function call: expr(args)
                 let start = expr.range.start
-                var arguments: [any Expression] = []
+                var arguments: [CallArgument] = []
                 if !check(.rightParen) {
                     repeat {
-                        let arg = try parseExpression()
-                        arguments.append(arg)
+                        // Optional argument label 'identifier:' or '_:'
+                        var argLabel: String? = nil
+                        let argStart = peek().range.start
+                        if case let .identifier(name) = peek().kind, checkAhead(.colon) {
+                            _ = advance()
+                            _ = try consume(.colon, "Expected ':' after argument label")
+                            argLabel = name
+                        } else if check(.underscore) && checkAhead(.colon) {
+                            let tok = advance()
+                            _ = try consume(.colon, "Expected ':' after '_' in argument")
+                            throw ParseError.underscoreArgumentLabelNotAllowed(tok)
+                        }
+                        let value = try parseExpression()
+                        let argRange = SourceRange(start: argStart, end: value.range.end)
+                        arguments.append(CallArgument(label: argLabel, value: value, range: argRange))
                     } while match(.comma)
                 }
                 let endToken = try consume(.rightParen, "Expected ')' after arguments")
@@ -617,4 +727,78 @@ public enum ParseError: Error {
     case expectedToken(TokenKind, Token, String)
     case expectedIdentifier(Token)
     case expectedType(Token)
+    case underscoreArgumentLabelNotAllowed(Token)
+}
+
+extension ParseError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case let .unexpectedToken(tok):
+            return "parse error at \(format(tok.range.start)): unexpected token '\(tokenString(tok))'"
+        case let .expectedToken(expected, actual, message):
+            return "parse error at \(format(actual.range.start)): \(message); found '\(tokenString(actual))', expected '\(tokenKindString(expected))'"
+        case let .expectedIdentifier(tok):
+            return "parse error at \(format(tok.range.start)): expected identifier, found '\(tokenString(tok))'"
+        case let .expectedType(tok):
+            return "parse error at \(format(tok.range.start)): expected type name, found '\(tokenString(tok))'"
+        case let .underscoreArgumentLabelNotAllowed(tok):
+            return "parse error at \(format(tok.range.start)): '_' is not a valid argument label"
+        }
+    }
+
+    private func tokenString(_ token: Token) -> String {
+        switch token.kind {
+        case let .identifier(name): return name
+        case let .integerLiteral(v): return v
+        case let .stringLiteral(v): return "\"\(v)\""
+        case let .booleanLiteral(b): return b ? "true" : "false"
+        case .plus: return "+"
+        case .minus: return "-"
+        case .exclamation: return "!"
+        case .star: return "*"
+        case .divide: return "/"
+        case .modulo: return "%"
+        case .assign: return "="
+        case .arrow: return "->"
+        case .logicalAnd: return "&&"
+        case .logicalOr: return "||"
+        case .equal: return "=="
+        case .notEqual: return "!="
+        case .lessThan: return "<"
+        case .lessThanOrEqual: return "<="
+        case .greaterThan: return ">"
+        case .greaterThanOrEqual: return ">="
+        case .leftParen: return "("
+        case .rightParen: return ")"
+        case .leftBrace: return "{"
+        case .rightBrace: return "}"
+        case .colon: return ":"
+        case .comma: return ","
+        case .underscore: return "_"
+        case .at: return "@"
+        case .ellipsis: return "..."
+        case .dot: return "."
+        case .ampersand: return "&"
+        case .eof: return "<eof>"
+        case .func: return "func"
+        case .var: return "var"
+        case .struct: return "struct"
+        case .return: return "return"
+        case .extern: return "extern"
+        case .if: return "if"
+        case .else: return "else"
+        case .true, .false:
+            // boolean literals handled above
+            return "bool"
+        }
+    }
+
+    private func tokenKindString(_ kind: TokenKind) -> String {
+        // We only need symbolic rendering for a subset; reuse same mapping
+        return tokenString(Token(kind: kind, range: SourceRange(start: .init(line: 0, column: 0, offset: 0), end: .init(line: 0, column: 0, offset: 0))))
+    }
+
+    private func format(_ loc: SourceLocation) -> String {
+        return "\(loc.line):\(loc.column)"
+    }
 }

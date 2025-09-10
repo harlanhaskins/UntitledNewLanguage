@@ -77,11 +77,13 @@ public struct FunctionType: TypeProtocol {
     public let parameters: [any TypeProtocol]
     public let returnType: any TypeProtocol
     public let isVariadic: Bool
+    public let labels: [String?] // external labels per parameter (including implicit self for methods)
 
-    public init(parameters: [any TypeProtocol], returnType: any TypeProtocol, isVariadic: Bool = false) {
+    public init(parameters: [any TypeProtocol], returnType: any TypeProtocol, isVariadic: Bool = false, labels: [String?] = []) {
         self.parameters = parameters
         self.returnType = returnType
         self.isVariadic = isVariadic
+        self.labels = labels
     }
 
     public func isSameType(as other: any TypeProtocol) -> Bool {
@@ -89,6 +91,11 @@ public struct FunctionType: TypeProtocol {
         guard parameters.count == otherFunc.parameters.count else { return false }
         guard isVariadic == otherFunc.isVariadic else { return false }
         guard returnType.isSameType(as: otherFunc.returnType) else { return false }
+        if labels.count == otherFunc.labels.count {
+            for (l1, l2) in zip(labels, otherFunc.labels) {
+                if l1 != l2 { return false }
+            }
+        }
 
         for (param1, param2) in zip(parameters, otherFunc.parameters) {
             if !param1.isSameType(as: param2) { return false }
@@ -107,13 +114,19 @@ public struct FunctionType: TypeProtocol {
     }
 
     public var typeId: String {
-        let params = parameters.map(\.typeId).joined(separator: ", ")
+        let params = parameters.enumerated().map { i, t in
+            if i < labels.count, let l = labels[i] { return "\(l): \(t.typeId)" }
+            return t.typeId
+        }.joined(separator: ", ")
         let variadic = isVariadic ? "..." : ""
         return "(\(params)\(variadic)) -> \(returnType.typeId)"
     }
 
     public var description: String {
-        let params = parameters.map(\.description).joined(separator: ", ")
+        let params = parameters.enumerated().map { i, t in
+            if i < labels.count, let l = labels[i] { return "\(l): \(t.description)" }
+            return t.description
+        }.joined(separator: ", ")
         let variadic = isVariadic ? "..." : ""
         return "(\(params)\(variadic)) -> \(returnType.description)"
     }

@@ -101,7 +101,7 @@ public final class Lexer {
             if match("&") {
                 return makeToken(.logicalAnd, start: start)
             }
-            fatalError("Unexpected character: &")
+            return makeToken(.ampersand, start: start)
         case "|":
             if match("|") {
                 return makeToken(.logicalOr, start: start)

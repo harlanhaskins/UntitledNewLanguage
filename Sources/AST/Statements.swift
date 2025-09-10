@@ -80,6 +80,23 @@ public final class MemberAssignStatement: Statement {
     }
 }
 
+/// General assignment statement that supports arbitrary lvalue targets
+public final class LValueAssignStatement: Statement {
+    public let range: SourceRange
+    public let target: any Expression // must be an lvalue
+    public let value: any Expression
+
+    public init(range: SourceRange, target: any Expression, value: any Expression) {
+        self.range = range
+        self.target = target
+        self.value = value
+    }
+
+    public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
+}
+
 public final class ExpressionStatement: Statement {
     public let range: SourceRange
     public let expression: any Expression
