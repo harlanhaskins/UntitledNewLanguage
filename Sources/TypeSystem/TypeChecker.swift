@@ -34,6 +34,8 @@ public final class TypeChecker: ASTWalker {
     private var environment: TypeEnvironment
     private let diagnostics: DiagnosticEngine
     private var currentStructContext: StructType? = nil
+    private var functionDeclsByName: [String: FunctionDeclaration] = [:]
+    private var structDeclsByName: [String: StructDeclaration] = [:]
 
     public init(diagnostics: DiagnosticEngine = DiagnosticEngine()) {
         environment = TypeEnvironment()
@@ -54,6 +56,7 @@ public final class TypeChecker: ASTWalker {
             if let structDecl = declaration as? StructDeclaration {
                 // Predeclare struct types so they can be referenced
                 let baseStructType = buildStructType(from: structDecl)
+                structDeclsByName[structDecl.name] = structDecl
                 // Build method types (with implicit self) and attach to struct type
                 var methodMap: [String: FunctionType] = [:]
                 for method in structDecl.methods {
@@ -64,9 +67,11 @@ public final class TypeChecker: ASTWalker {
                 environment.define(structDecl.name, type: fullStructType)
             } else if let funcDecl = declaration as? FunctionDeclaration {
                 let funcType = buildFunctionType(from: funcDecl)
+                functionDeclsByName[funcDecl.name] = funcDecl
                 environment.define(funcDecl.name, type: funcType)
             } else if let externDecl = declaration as? ExternDeclaration {
                 let funcType = buildFunctionType(from: externDecl.function)
+                functionDeclsByName[externDecl.function.name] = externDecl.function
                 environment.define(externDecl.function.name, type: funcType)
             }
         }
@@ -477,116 +482,60 @@ public final class TypeChecker: ASTWalker {
     }
 
     public func visit(_ node: CallExpression) -> any TypeProtocol {
-        // Special-case: method call receiver.method(args)
-        if let memberAccess = node.function as? MemberAccessExpression {
-            // Evaluate base and get its struct type
-            let baseType = memberAccess.base.accept(self)
-            if let structType = baseType as? StructType, let methodType = structType.methods[memberAccess.member] {
-                // Type check arguments against declared parameters (excluding self)
-                let expectedArgCount = methodType.parameters.count - 1
-                let actualArgCount = node.arguments.count
-                if expectedArgCount != actualArgCount {
-                    diagnostics.argumentCountMismatch(at: node.range, expected: expectedArgCount, actual: actualArgCount)
-                }
-                // Check labels and types (excluding self)
-                let labels = Array(methodType.labels.dropFirst())
-                var anyLabelMismatch = false
-                for (index, arg) in node.arguments.enumerated() {
-                    let argType = arg.value.accept(self)
-                    if index < labels.count {
-                        if let expectedLabel = labels[index] {
-                            if let got = arg.label {
-                                if got != expectedLabel {
-                                    diagnostics.incorrectArgumentLabel(at: arg.range, expected: expectedLabel, got: got)
-                                    anyLabelMismatch = true
-                                }
-                            } else {
-                                diagnostics.missingArgumentLabel(at: arg.range, expected: expectedLabel)
-                                anyLabelMismatch = true
-                            }
-                        } else {
-                            if let got = arg.label {
-                                diagnostics.unexpectedArgumentLabel(at: arg.range, got: got)
-                                anyLabelMismatch = true
-                            }
-                        }
-                    }
-                    if index + 1 < methodType.parameters.count {
-                        let expectedType = methodType.parameters[index + 1]
-                        if !argType.isSameType(as: expectedType) {
-                            diagnostics.typeMismatch(at: arg.range, expected: expectedType, actual: argType)
-                        }
-                    }
-                }
-                // Order diagnostic: if sets of provided labels and expected labels (non-nil) match, but order differs
-                let expectedNonNil = labels.compactMap { $0 }
-                let gotNonNil = node.arguments.compactMap { $0.label }
-                if !expectedNonNil.isEmpty,
-                   Set(expectedNonNil) == Set(gotNonNil),
-                   expectedNonNil != gotNonNil {
-                    diagnostics.argumentLabelOrderMismatch(at: node.range, expected: expectedNonNil, got: gotNonNil)
-                }
-                // Propagate member access expression type for AST printing
-                let exposed = FunctionType(parameters: Array(methodType.parameters.dropFirst()), returnType: methodType.returnType, isVariadic: methodType.isVariadic, labels: Array(methodType.labels.dropFirst()))
-                memberAccess.resolvedType = exposed
-                node.resolvedType = methodType.returnType
-                return methodType.returnType
+        // Resolve callee type
+        let calleeType = node.function.accept(self)
+
+        // Gather expected labels from declarations (not types)
+        var expectedLabels: [String?] = []
+        if let ident = node.function as? IdentifierExpression, let decl = functionDeclsByName[ident.name] {
+            expectedLabels = decl.parameters.map { $0.label }
+        } else if let mem = node.function as? MemberAccessExpression {
+            let baseType = mem.base.resolvedType ?? mem.base.accept(self)
+            if let st = baseType as? StructType, let sdecl = structDeclsByName[st.name], let mdecl = sdecl.methods.first(where: { $0.name == mem.member }) {
+                expectedLabels = mdecl.parameters.map { $0.label }
             }
         }
 
-        let functionType = node.function.accept(self)
-
-        var resultType: any TypeProtocol
-
-        if let funcType = functionType as? FunctionType {
-            // Check argument count and types
+        if let funcType = calleeType as? FunctionType {
             let expectedArgCount = funcType.parameters.count
             let actualArgCount = node.arguments.count
-
             if !funcType.isVariadic, actualArgCount != expectedArgCount {
                 diagnostics.argumentCountMismatch(at: node.range, expected: expectedArgCount, actual: actualArgCount)
             } else if funcType.isVariadic, actualArgCount < expectedArgCount {
                 diagnostics.argumentCountMismatch(at: node.range, expected: expectedArgCount, actual: actualArgCount)
             }
 
-            // Check labels and argument types (up to the number of declared parameters)
-            var anyLabelMismatch = false
             for (index, arg) in node.arguments.enumerated() {
                 let argType = arg.value.accept(self)
                 if index < funcType.parameters.count {
                     let expectedType = funcType.parameters[index]
-                    // Label checking
-                    if index < funcType.labels.count {
-                        if let expectedLabel = funcType.labels[index] {
+                    // Label checking against decl-sourced labels
+                    if index < expectedLabels.count {
+                        if let expectedLabel = expectedLabels[index] {
                             if let got = arg.label {
                                 if got != expectedLabel {
                                     diagnostics.incorrectArgumentLabel(at: arg.range, expected: expectedLabel, got: got)
-                                    anyLabelMismatch = true
                                 }
                             } else {
                                 diagnostics.missingArgumentLabel(at: arg.range, expected: expectedLabel)
-                                anyLabelMismatch = true
                             }
                         } else if let got = arg.label {
                             diagnostics.unexpectedArgumentLabel(at: arg.range, got: got)
-                            anyLabelMismatch = true
                         }
                     }
 
                     if expectedType is CVarArgsType {
-                        // For CVarArgs parameters, any type is acceptable
                         diagnostics.variadicArgumentType(at: arg.range, type: argType)
                     } else if !argType.isSameType(as: expectedType) {
                         diagnostics.typeMismatch(at: arg.range, expected: expectedType, actual: argType)
                     }
                 } else if funcType.isVariadic {
-                    // For variadic functions, additional arguments beyond declared parameters
-                    // are accepted as CVarArgs
                     diagnostics.variadicArgumentType(at: arg.range, type: argType)
                 }
             }
-            // Order diagnostic on free functions
-            let expectedNonNil = funcType.labels.compactMap { $0 }
+
+            // Order diagnostic for non-nil labels
+            let expectedNonNil = expectedLabels.compactMap { $0 }
             let gotNonNil = node.arguments.compactMap { $0.label }
             if !expectedNonNil.isEmpty,
                Set(expectedNonNil) == Set(gotNonNil),
@@ -594,33 +543,26 @@ public final class TypeChecker: ASTWalker {
                 diagnostics.argumentLabelOrderMismatch(at: node.range, expected: expectedNonNil, got: gotNonNil)
             }
 
-            resultType = funcType.returnType
-        } else {
-            // Handle type constructor calls (like Int32(x))
-            if let identifierExpr = node.function as? IdentifierExpression {
-                if let targetType = environment.lookup(identifierExpr.name) {
-                    // This is a type cast
-                    if node.arguments.count == 1 {
-                        _ = node.arguments[0].value.accept(self)
-                        // For now, allow any integer to integer conversion
-                        resultType = targetType
-                    } else {
-                        diagnostics.notCallable(at: node.range, type: functionType)
-                        resultType = UnknownType()
-                    }
-                } else {
-                    diagnostics.notCallable(at: node.range, type: functionType)
-                    resultType = UnknownType()
-                }
+            node.resolvedType = funcType.returnType
+            return funcType.returnType
+        }
+
+        // Type constructor calls (Int32(x))
+        if let ident = node.function as? IdentifierExpression, let targetType = environment.lookup(ident.name) {
+            if node.arguments.count == 1 {
+                _ = node.arguments[0].value.accept(self)
+                node.resolvedType = targetType
+                return targetType
             } else {
-                diagnostics.notCallable(at: node.range, type: functionType)
-                resultType = UnknownType()
+                diagnostics.notCallable(at: node.range, type: calleeType)
+                node.resolvedType = UnknownType()
+                return node.resolvedType!
             }
         }
 
-        // Store resolved type in the AST node
-        node.resolvedType = resultType
-        return resultType
+        diagnostics.notCallable(at: node.range, type: calleeType)
+        node.resolvedType = UnknownType()
+        return node.resolvedType!
     }
 
     public func visit(_ node: CastExpression) -> any TypeProtocol {
@@ -666,7 +608,12 @@ public final class TypeChecker: ASTWalker {
         }
         if let methodType = structType.methods[node.member] {
             // Expose a callable taking only declared parameters (implicit self is bound by call site)
-            let exposed = FunctionType(parameters: Array(methodType.parameters.dropFirst()), returnType: methodType.returnType, isVariadic: methodType.isVariadic)
+            let exposed = FunctionType(
+                parameters: Array(methodType.parameters.dropFirst()),
+                returnType: methodType.returnType,
+                isVariadic: methodType.isVariadic,
+                labels: Array(methodType.labels.dropFirst())
+            )
             node.resolvedType = exposed
             return exposed
         }

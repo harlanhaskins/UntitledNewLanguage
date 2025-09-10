@@ -278,7 +278,7 @@ public final class SSAFunctionBuilder {
 
         // Fallback: evaluate base to a value and extract step by step
         var currentValue = lowerExpression(baseExpr)
-        var currentType: any TypeProtocol = (baseExpr as? Expression)?.resolvedType ?? UnknownType()
+        var currentType: any TypeProtocol = baseExpr.resolvedType ?? UnknownType()
         for name in path {
             let resultType: any TypeProtocol
             if let structType = currentType as? StructType, let field = structType.fields.first(where: { $0.0 == name }) {

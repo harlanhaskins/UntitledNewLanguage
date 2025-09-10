@@ -130,9 +130,8 @@ func main() -> Int32 {
 // CHECK-C: {{t[0-9]+}} = {{t[0-9]+}} <= {{[0-9]+}};
 // CHECK-C: if ({{t[0-9]+}}) goto then; else goto else_block;
 // CHECK-C:     return 0;
-// CHECK-C:     t3 = sumToN(t2);
-// CHECK-C:     t4 = t + t3;
-// CHECK-C:     return t4;
+// CHECK-C: // %{{[0-9]+}} = apply @sumToN
+// CHECK-C:     return t{{[0-9]+}};
 // CHECK-C: }
 
 // CHECK-OUTPUT: factorial(5) = 120
