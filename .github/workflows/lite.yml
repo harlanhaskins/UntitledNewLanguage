@@ -26,7 +26,7 @@ jobs:
         run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
       - name: Clean SwiftPM Cache
-        run: swift package clean
+        run: swift package reset
 
       - name: Build
         run: swift build -v
