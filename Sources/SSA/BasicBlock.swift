@@ -1,7 +1,7 @@
 import Types
 
 /// A basic block in SSA form with parameters (replacing traditional phi nodes)
-public final class BasicBlock: Equatable {
+public final class BasicBlock: Equatable, SSAVisitable {
     public let name: String
     public var parameters: [BlockParameter]
     public var instructions: [any SSAInstruction]
@@ -55,10 +55,14 @@ public final class BasicBlock: Equatable {
     public static func ==(lhs: BasicBlock, rhs: BasicBlock) -> Bool {
         lhs === rhs
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
 }
 
 /// Base protocol for block terminators (instructions that end a block)
-public protocol Terminator {
+public protocol Terminator: SSAVisitable {
     var successors: [BasicBlock] { get }
 }
 
@@ -77,6 +81,8 @@ public final class JumpTerm: Terminator {
         precondition(arguments.count == target.parameters.count,
                      "Argument count (\(arguments.count)) must match target parameter count (\(target.parameters.count))")
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Conditional branch based on a boolean value
@@ -105,10 +111,12 @@ public final class BranchTerm: Terminator {
         precondition(falseArguments.count == falseTarget.parameters.count,
                      "False branch argument count must match target parameter count")
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Return from function
-public final class ReturnTerm: Terminator {
+public final class ReturnTerm: Terminator, SSAVisitable {
     public let value: (any SSAValue)?
 
     public var successors: [BasicBlock] { [] }
@@ -116,4 +124,6 @@ public final class ReturnTerm: Terminator {
     public init(value: (any SSAValue)? = nil) {
         self.value = value
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }

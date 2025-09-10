@@ -1,7 +1,7 @@
 import Types
 
 /// Base protocol for all SSA instructions. Instructions are SSA values.
-public protocol SSAInstruction: SSAValue {
+public protocol SSAInstruction: SSAValue, SSAVisitable {
     var operands: [any SSAValue] { get }
 }
 
@@ -26,6 +26,8 @@ public final class BinaryOp: SSAInstruction {
         self.right = right
         self.type = type
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Unary operations
@@ -46,6 +48,8 @@ public final class UnaryOp: SSAInstruction {
         self.operand = operand
         self.type = type
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Extract a field value from a struct value
@@ -61,6 +65,8 @@ public final class FieldExtractInst: SSAInstruction {
         self.fieldName = fieldName
         self.type = type
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Compute the address of a nested field path (GEP-like)
@@ -76,6 +82,8 @@ public final class FieldAddressInst: SSAInstruction {
         self.fieldPath = fieldPath
         self.type = type
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Function call instruction
@@ -91,6 +99,8 @@ public final class CallInst: SSAInstruction {
         self.arguments = arguments
         self.type = type
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Allocate memory on the stack (like LLVM's alloca)
@@ -109,6 +119,8 @@ public final class AllocaInst: SSAInstruction {
         self.userProvidedName = userProvidedName
         self.type = PointerType(pointee: allocatedType)
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Load from a memory location
@@ -122,6 +134,8 @@ public final class LoadInst: SSAInstruction {
         self.address = address
         self.type = type
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Store to a memory location
@@ -136,6 +150,8 @@ public final class StoreInst: SSAInstruction {
         self.address = address
         self.value = value
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Cast/conversion instruction
@@ -150,5 +166,9 @@ public final class CastInst: SSAInstruction {
         self.value = value
         self.targetType = targetType
         self.type = targetType
+    }
+
+    public func accept<V: SSAFunctionVisitor>(_ visitor: V) -> V.Result {
+        visitor.visit(self)
     }
 }

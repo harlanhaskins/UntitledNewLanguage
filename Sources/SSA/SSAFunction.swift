@@ -96,4 +96,8 @@ public final class SSAFunction {
         }
         return block
     }
+
+    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result {
+        return walker.visit(self)
+    }
 }
