@@ -1,6 +1,6 @@
 import Types
 
-/// Represents a value in SSA form - could be a parameter, instruction result, or constant
+/// Represents a value in SSA form - could be a parameter, instruction itself, or constant
 public protocol SSAValue: AnyObject {
     var type: any TypeProtocol { get }
 }
@@ -18,18 +18,7 @@ public final class BlockParameter: SSAValue {
     }
 }
 
-/// Result of an SSA instruction
-public final class InstructionResult: SSAValue {
-    public let type: any TypeProtocol
-    public let instruction: any SSAInstruction
-
-    public init(type: any TypeProtocol, instruction: any SSAInstruction) {
-        self.type = type
-        self.instruction = instruction
-    }
-}
-
-/// A constant value
+/// A constant SSA value
 public final class ConstantValue: SSAValue {
     public let type: any TypeProtocol
     public let value: Any

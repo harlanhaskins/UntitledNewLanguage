@@ -59,13 +59,11 @@ public final class SSAFunctionBuilder {
                 guard idx < currentFunction.entryBlock.parameters.count else { continue }
                 let incoming = currentFunction.entryBlock.parameters[idx]
                 let pType: any TypeProtocol = param.type.resolvedType ?? UnknownType()
-                let alloca = AllocaInst(allocatedType: pType, userProvidedName: param.name, result: nil)
-                let allocaRes = InstructionResult(type: PointerType(pointee: pType), instruction: alloca)
-                let allocaWithRes = AllocaInst(allocatedType: pType, userProvidedName: param.name, result: allocaRes)
-                currentBlock.add(allocaWithRes)
-                let store = StoreInst(address: allocaRes, value: incoming)
+                let alloca = AllocaInst(allocatedType: pType, userProvidedName: param.name)
+                currentBlock.add(alloca)
+                let store = StoreInst(address: alloca, value: incoming)
                 currentBlock.add(store)
-                variableMap[param.name] = allocaRes
+                variableMap[param.name] = alloca
             }
         }
 
@@ -146,20 +144,18 @@ public final class SSAFunctionBuilder {
         }
 
         // Allocate memory for the variable in the original block
-        let allocaInst = AllocaInst(allocatedType: varType, userProvidedName: varBinding.name, result: nil)
-        let allocaResult = InstructionResult(type: PointerType(pointee: varType), instruction: allocaInst)
-        let allocaWithResult = AllocaInst(allocatedType: varType, userProvidedName: varBinding.name, result: allocaResult)
-        originalBlock.add(allocaWithResult)
+        let allocaInst = AllocaInst(allocatedType: varType, userProvidedName: varBinding.name)
+        originalBlock.add(allocaInst)
 
         // If we have an initializer, store it
         if let initExpr = varBinding.value {
             let value = lowerExpression(initExpr)
-            let storeInst = StoreInst(address: allocaResult, value: value)
+            let storeInst = StoreInst(address: allocaInst, value: value)
             insert(storeInst)
         }
 
         // Map variable name to its alloca
-        variableMap[varBinding.name] = allocaResult
+        variableMap[varBinding.name] = allocaInst
     }
 
     /// Lower an assignment statement (x = expr)
@@ -173,12 +169,10 @@ public final class SSAFunctionBuilder {
         if let selfParam = selfParam, let structType = selfStructType,
            structType.fields.first(where: { $0.0 == assignStmt.name }) != nil {
             let fieldType = assignStmt.value.resolvedType ?? UnknownType()
-            let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [assignStmt.name], result: nil)
-            let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-            let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: [assignStmt.name], result: addrRes)
-            insert(addrWithRes)
+            let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [assignStmt.name], type: PointerType(pointee: fieldType))
+            insert(addrInst)
             let value = lowerExpression(assignStmt.value)
-            let storeInst = StoreInst(address: addrRes, value: value)
+            let storeInst = StoreInst(address: addrInst, value: value)
             insert(storeInst)
             return
         }
@@ -189,14 +183,12 @@ public final class SSAFunctionBuilder {
         guard let baseAddr = variableMap[stmt.baseName], baseAddr.type is PointerType else { return }
         // Compute the address of the nested field
         let fieldType = stmt.value.resolvedType ?? UnknownType()
-        let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: stmt.memberPath, result: nil)
-        let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-        let addrWithRes = FieldAddressInst(baseAddress: baseAddr, fieldPath: stmt.memberPath, result: addrRes)
-        insert(addrWithRes)
+        let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: stmt.memberPath, type: PointerType(pointee: fieldType))
+        insert(addrInst)
 
         // Store the value
         let value = lowerExpression(stmt.value)
-        let storeInst = StoreInst(address: addrRes, value: value)
+        let storeInst = StoreInst(address: addrInst, value: value)
         insert(storeInst)
     }
 
@@ -263,17 +255,12 @@ public final class SSAFunctionBuilder {
            baseAddr.type is PointerType {
             // Determine final field type from the MemberAccessExpression's resolved type
             let fieldType = member.resolvedType ?? UnknownType()
-            let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: nil)
-            let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-            let addrWithRes = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: addrRes)
-            insert(addrWithRes)
-
+            let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, type: PointerType(pointee: fieldType))
+            insert(addrInst)
             // Load from the computed address
-            let loadInst = LoadInst(address: addrRes, result: nil)
-            let loadRes = InstructionResult(type: fieldType, instruction: loadInst)
-            let loadWithRes = LoadInst(address: addrRes, result: loadRes)
-            insert(loadWithRes)
-            return loadRes
+            let loadInst = LoadInst(address: addrInst, type: fieldType)
+            insert(loadInst)
+            return loadInst
         }
 
         // Fallback: evaluate base to a value and extract step by step
@@ -286,11 +273,9 @@ public final class SSAFunctionBuilder {
             } else {
                 resultType = member.resolvedType ?? UnknownType()
             }
-            let inst = FieldExtractInst(base: currentValue, fieldName: name, result: nil)
-            let res = InstructionResult(type: resultType, instruction: inst)
-            let withRes = FieldExtractInst(base: currentValue, fieldName: name, result: res)
-            insert(withRes)
-            currentValue = res
+            let inst = FieldExtractInst(base: currentValue, fieldName: name, type: resultType)
+            insert(inst)
+            currentValue = inst
             currentType = resultType
         }
         return currentValue
@@ -303,11 +288,9 @@ public final class SSAFunctionBuilder {
             let operand = lowerExpression(unary.operand)
             let op: UnaryOp.Operator = (unary.operator == .negate) ? .negate : .logicalNot
             let resultType = unary.resolvedType ?? operand.type
-            let unaryInst = UnaryOp(operator: op, operand: operand, result: nil)
-            let result = InstructionResult(type: resultType, instruction: unaryInst)
-            let unaryWithResult = UnaryOp(operator: op, operand: operand, result: result)
-            insert(unaryWithResult)
-            return result
+            let unaryInst = UnaryOp(operator: op, operand: operand, type: resultType)
+            insert(unaryInst)
+            return unaryInst
         case .dereference:
             // Lower operand to an address and load from it
             let addressValue = lowerExpression(unary.operand)
@@ -317,11 +300,9 @@ public final class SSAFunctionBuilder {
                 return ConstantValue(type: unary.resolvedType ?? UnknownType(), value: "error")
             }
             let resultType = unary.resolvedType ?? UnknownType()
-            let loadInst = LoadInst(address: addressValue, result: nil)
-            let result = InstructionResult(type: resultType, instruction: loadInst)
-            let loadWithResult = LoadInst(address: addressValue, result: result)
-            insert(loadWithResult)
-            return result
+            let loadInst = LoadInst(address: addressValue, type: resultType)
+            insert(loadInst)
+            return loadInst
         case .addressOf:
             // Compute address of lvalue operand
             if let addr = lowerAddress(of: unary.operand) {
@@ -348,11 +329,9 @@ public final class SSAFunctionBuilder {
                       structType.fields.first(where: { $0.0 == ident.name }) != nil {
                 // &field inside method (implicit self)
                 let fieldType = ident.resolvedType ?? UnknownType()
-                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [ident.name], result: nil)
-                let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-                let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: [ident.name], result: addrRes)
-                insert(addrWithRes)
-                return addrRes
+                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [ident.name], type: PointerType(pointee: fieldType))
+                insert(addrInst)
+                return addrInst
             }
             return nil
         }
@@ -371,18 +350,14 @@ public final class SSAFunctionBuilder {
                 // Only if base is an alloca (not a parameter)
                 if baseAddr is BlockParameter { return nil }
                 let fieldType = member.resolvedType ?? UnknownType()
-                let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: nil)
-                let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-                let addrWithRes = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, result: addrRes)
-                insert(addrWithRes)
-                return addrRes
+                let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, type: PointerType(pointee: fieldType))
+                insert(addrInst)
+                return addrInst
             } else if let selfParam = selfParam, let _ = selfStructType {
                 let fieldType = member.resolvedType ?? UnknownType()
-                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: path, result: nil)
-                let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-                let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: path, result: addrRes)
-                insert(addrWithRes)
-                return addrRes
+                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: path, type: PointerType(pointee: fieldType))
+                insert(addrInst)
+                return addrInst
             }
         }
 
@@ -434,12 +409,9 @@ public final class SSAFunctionBuilder {
                           op == .lessThan || op == .lessThanOrEqual ||
                           op == .greaterThan || op == .greaterThanOrEqual
         let resultType = binary.resolvedType ?? (isComparison ? BoolType() : IntType())
-        let binaryInst = BinaryOp(operator: op, left: left, right: right, result: nil)
-        let result = InstructionResult(type: resultType, instruction: binaryInst)
-        let binaryWithResult = BinaryOp(operator: op, left: left, right: right, result: result)
-        insert(binaryWithResult)
-
-        return result
+        let binaryInst = BinaryOp(operator: op, left: left, right: right, type: resultType)
+        insert(binaryInst)
+        return binaryInst
     }
 
     /// Lower short-circuit operation (both && and ||)
@@ -515,15 +487,13 @@ public final class SSAFunctionBuilder {
                 let args = [baseAddr] + call.arguments.map { lowerExpression($0.value) }
                 let resultType = call.resolvedType ?? VoidType()
                 if resultType is VoidType {
-                    let callInst = CallInst(function: funcName, arguments: args, result: nil)
+                    let callInst = CallInst(function: funcName, arguments: args, type: VoidType())
                     insert(callInst)
                     return ConstantValue(type: VoidType(), value: ())
                 } else {
-                    let callInst = CallInst(function: funcName, arguments: args, result: nil)
-                    let result = InstructionResult(type: resultType, instruction: callInst)
-                    let callWithResult = CallInst(function: funcName, arguments: args, result: result)
-                    insert(callWithResult)
-                    return result
+                    let callInst = CallInst(function: funcName, arguments: args, type: resultType)
+                    insert(callInst)
+                    return callInst
                 }
             }
         }
@@ -539,27 +509,23 @@ public final class SSAFunctionBuilder {
             }
 
             let value = lowerExpression(call.arguments[0].value)
-            let castInst = CastInst(value: value, targetType: resultType, result: nil)
-            let result = InstructionResult(type: resultType, instruction: castInst)
-            let castWithResult = CastInst(value: value, targetType: resultType, result: result)
-            insert(castWithResult)
-            return result
+            let castInst = CastInst(value: value, targetType: resultType)
+            insert(castInst)
+            return castInst
         } else {
             // This is a regular function call
             let arguments = call.arguments.map { lowerExpression($0.value) }
 
             if resultType is VoidType {
                 // Void function call
-                let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
+                let callInst = CallInst(function: funcName, arguments: arguments, type: VoidType())
                 insert(callInst)
                 return ConstantValue(type: VoidType(), value: ())
             } else {
                 // Non-void function call
-                let callInst = CallInst(function: funcName, arguments: arguments, result: nil)
-                let result = InstructionResult(type: resultType, instruction: callInst)
-                let callWithResult = CallInst(function: funcName, arguments: arguments, result: result)
-                insert(callWithResult)
-                return result
+                let callInst = CallInst(function: funcName, arguments: arguments, type: resultType)
+                insert(callInst)
+                return callInst
             }
         }
     }
@@ -598,12 +564,10 @@ public final class SSAFunctionBuilder {
         let value = lowerExpression(cast.expression)
         let targetType = cast.resolvedType ?? IntType()
 
-        let castInst = CastInst(value: value, targetType: targetType, result: nil)
-        let result = InstructionResult(type: targetType, instruction: castInst)
-        let castWithResult = CastInst(value: value, targetType: targetType, result: result)
-        insert(castWithResult)
+        let castInst = CastInst(value: value, targetType: targetType)
+        insert(castInst)
 
-        return result
+        return castInst
     }
 
     /// Lower an identifier expression (variable reference)
@@ -616,26 +580,20 @@ public final class SSAFunctionBuilder {
             }
             // If it's a local variable (alloca result), load from it
             else {
-            let loadInst = LoadInst(address: ssaValue, result: nil)
             let resultType = identifier.resolvedType ?? IntType()
-            let result = InstructionResult(type: resultType, instruction: loadInst)
-            let loadWithResult = LoadInst(address: ssaValue, result: result)
-            insert(loadWithResult)
-            return result
+            let loadInst = LoadInst(address: ssaValue, type: resultType)
+            insert(loadInst)
+            return loadInst
             }
         } else if let selfParam = selfParam, let structType = selfStructType,
                   structType.fields.first(where: { $0.0 == identifier.name }) != nil {
             // Implicit self field load
-            let fieldType = identifier.resolvedType ?? UnknownType()
-            let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [identifier.name], result: nil)
-            let addrRes = InstructionResult(type: PointerType(pointee: fieldType), instruction: addrInst)
-            let addrWithRes = FieldAddressInst(baseAddress: selfParam, fieldPath: [identifier.name], result: addrRes)
-            insert(addrWithRes)
-            let loadInst = LoadInst(address: addrRes, result: nil)
-            let loadRes = InstructionResult(type: fieldType, instruction: loadInst)
-            let loadWithRes = LoadInst(address: addrRes, result: loadRes)
-            insert(loadWithRes)
-            return loadRes
+                let fieldType = identifier.resolvedType ?? UnknownType()
+                let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [identifier.name], type: PointerType(pointee: fieldType))
+                insert(addrInst)
+                let loadInst = LoadInst(address: addrInst, type: fieldType)
+                insert(loadInst)
+                return loadInst
         } else {
             // Unknown identifier at lowering time; report and return error value
             diagnostics.ssaCannotComputeAddress(at: identifier.range, type: identifier.resolvedType ?? UnknownType())

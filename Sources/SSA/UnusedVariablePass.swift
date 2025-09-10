@@ -25,9 +25,7 @@ public final class UnusedVariableFunctionPass: SSAFunctionAnalysisPass {
         var writeOnlyCount = 0
 
         for (alloca, _) in allocas {
-            guard let allocaResult = alloca.result else { continue }
-
-            let usage = analyzeVariableUsage(allocaResult, in: function)
+            let usage = analyzeVariableUsage(alloca, in: function)
 
             if !usage.isLoaded {
                 unusedCount += 1

@@ -15,8 +15,7 @@ public final class ValueNameMap {
         }
 
         var userProvidedName: String?
-        if let result = value as? InstructionResult,
-           let alloca = result.instruction as? AllocaInst {
+        if let alloca = value as? AllocaInst {
             userProvidedName = alloca.userProvidedName
         }
 
@@ -87,11 +86,11 @@ public enum SSAPrinter {
     public static func printInstruction(_ instruction: any SSAInstruction, nameMap: ValueNameMap) -> String {
         switch instruction {
         case let alloca as AllocaInst:
-            let result = alloca.result.map { nameMap.getName(for: $0) } ?? "%unknown"
-            return "\(result) = alloca $\(formatType(alloca.allocatedType))"
+            let name = nameMap.getName(for: alloca)
+            return "\(name) = alloca $\(formatType(alloca.allocatedType))"
 
         case let load as LoadInst:
-            let result = load.result.map { nameMap.getName(for: $0) } ?? "%unknown"
+            let result = nameMap.getName(for: load)
             let addr = formatValue(load.address, nameMap: nameMap)
             return "\(result) = load \(addr)"
 
@@ -101,30 +100,41 @@ public enum SSAPrinter {
             return "store \(value) to \(addr)"
 
         case let binary as BinaryOp:
-            let result = binary.result.map { nameMap.getName(for: $0) } ?? "%unknown"
+            let result = nameMap.getName(for: binary)
             let left = formatValue(binary.left, nameMap: nameMap)
             let right = formatValue(binary.right, nameMap: nameMap)
             let op = formatBinaryOp(binary.operator)
             return "\(result) = \(op) \(left), \(right)"
 
         case let unary as UnaryOp:
-            let result = unary.result.map { nameMap.getName(for: $0) } ?? "%unknown"
+            let result = nameMap.getName(for: unary)
             let operand = formatValue(unary.operand, nameMap: nameMap)
             let op = formatUnaryOp(unary.operator)
             return "\(result) = \(op) \(operand)"
 
         case let call as CallInst:
             let args = call.arguments.map { formatValue($0, nameMap: nameMap) }.joined(separator: ", ")
-            if let result = call.result {
-                return "\(nameMap.getName(for: result)) = apply @\(call.function)(\(args))"
+            if !(call.type is VoidType) {
+                let name = nameMap.getName(for: call)
+                return "\(name) = apply @\(call.function)(\(args))"
             } else {
                 return "apply @\(call.function)(\(args))"
             }
 
         case let cast as CastInst:
-            let result = cast.result.map { nameMap.getName(for: $0) } ?? "%unknown"
+            let result = nameMap.getName(for: cast)
             let value = formatValue(cast.value, nameMap: nameMap)
             return "\(result) = cast \(value) : $\(formatType(cast.value.type)) to $\(formatType(cast.targetType))"
+
+        case let field as FieldExtractInst:
+            let result = nameMap.getName(for: field)
+            let base = formatValue(field.base, nameMap: nameMap)
+            return "\(result) = extract \(base).\(field.fieldName)"
+
+        case let fieldAddr as FieldAddressInst:
+            let result = nameMap.getName(for: fieldAddr)
+            let base = formatValue(fieldAddr.baseAddress, nameMap: nameMap)
+            return "\(result) = gep \(base) [\(fieldAddr.fieldPath.joined(separator: "."))]"
 
         default:
             return "// unknown instruction: \(type(of: instruction))"

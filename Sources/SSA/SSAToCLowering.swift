@@ -28,8 +28,7 @@ private final class SSAValueToCNameMap {
         }
 
         var userProvidedName: String?
-        if let result = value as? InstructionResult,
-           let alloca = result.instruction as? AllocaInst {
+        if let alloca = value as? AllocaInst {
             userProvidedName = alloca.userProvidedName
         }
 
@@ -108,7 +107,7 @@ public final class CFunctionEmitter {
         for block in function.blocks {
             for instruction in block.instructions {
                 if let alloca = instruction as? AllocaInst {
-                    let varName = variableNameMap.getLocalVarName(for: alloca.result!)
+                    let varName = variableNameMap.getLocalVarName(for: alloca)
                     localVars.append((alloca.allocatedType, varName))
                 }
             }
@@ -129,14 +128,11 @@ public final class CFunctionEmitter {
                 }
             }
             
-            // Collect instruction results
+            // Collect instruction temporaries for non-void, non-alloca/address computations
             for instruction in block.instructions {
-                if let result = getInstructionResult(instruction) {
-                    // Skip alloca and field address results (no C temp needed)
-                    if !(instruction is AllocaInst) && !(instruction is FieldAddressInst) {
-                        let varName = variableNameMap.getTempName(for: result)
-                        tempVars.append((result.type, varName))
-                    }
+                if !(instruction is AllocaInst) && !(instruction is FieldAddressInst) && !(instruction.type is VoidType) {
+                    let varName = variableNameMap.getTempName(for: instruction)
+                    tempVars.append((instruction.type, varName))
                 }
             }
         }
@@ -175,9 +171,8 @@ public final class CFunctionEmitter {
             return "// alloca \(formatCType(alloca.allocatedType))"
 
         case let load as LoadInst:
-            let resultName = variableNameMap.getTempName(for: load.result!)
-            if let addrRes = load.address as? InstructionResult,
-               let fieldAddr = addrRes.instruction as? FieldAddressInst {
+            let resultName = variableNameMap.getTempName(for: load)
+            if let fieldAddr = load.address as? FieldAddressInst {
                 let lvalue = formatLValue(for: fieldAddr)
                 return "\(resultName) = \(lvalue);"
             } else {
@@ -187,8 +182,7 @@ public final class CFunctionEmitter {
 
         case let store as StoreInst:
             let valueName = getValueName(store.value)
-            if let addrRes = store.address as? InstructionResult,
-               let fieldAddr = addrRes.instruction as? FieldAddressInst {
+            if let fieldAddr = store.address as? FieldAddressInst {
                 let lvalue = formatLValue(for: fieldAddr)
                 return "\(lvalue) = \(valueName);"
             } else {
@@ -197,34 +191,34 @@ public final class CFunctionEmitter {
             }
 
         case let binary as BinaryOp:
-            let resultName = variableNameMap.getTempName(for: binary.result!)
+            let resultName = variableNameMap.getTempName(for: binary)
             let leftName = getValueName(binary.left)
             let rightName = getValueName(binary.right)
             let op = formatBinaryOp(binary.operator)
             return "\(resultName) = \(leftName) \(op) \(rightName);"
 
         case let unary as UnaryOp:
-            let resultName = variableNameMap.getTempName(for: unary.result!)
+            let resultName = variableNameMap.getTempName(for: unary)
             let operandName = getValueName(unary.operand)
             let op = formatUnaryOp(unary.operator)
             return "\(resultName) = \(op)\(operandName);"
 
         case let call as CallInst:
             let args = call.arguments.map { getCallArgName($0) }.joined(separator: ", ")
-            if let result = call.result {
-                let resultName = variableNameMap.getTempName(for: result)
+            if !(call.type is VoidType) {
+                let resultName = variableNameMap.getTempName(for: call)
                 return "\(resultName) = \(call.function)(\(args));"
             } else {
                 return "\(call.function)(\(args));"
             }
 
         case let cast as CastInst:
-            let resultName = variableNameMap.getTempName(for: cast.result!)
+            let resultName = variableNameMap.getTempName(for: cast)
             let valueName = getValueName(cast.value)
             let targetType = formatCType(cast.targetType)
             return "\(resultName) = (\(targetType))\(valueName);"
         case let field as FieldExtractInst:
-            let resultName = variableNameMap.getTempName(for: field.result!)
+            let resultName = variableNameMap.getTempName(for: field)
             let baseName = getValueName(field.base)
             return "\(resultName) = \(baseName).\(field.fieldName);"
         case let fieldAddr as FieldAddressInst:
@@ -294,12 +288,10 @@ public final class CFunctionEmitter {
         switch value {
         case let constant as ConstantValue:
             return formatConstant(constant)
-        case let result as InstructionResult:
-            if result.instruction is AllocaInst {
-                return variableNameMap.getLocalVarName(for: result)
-            } else {
-                return variableNameMap.getTempName(for: result)
-            }
+        case let alloca as AllocaInst:
+            return variableNameMap.getLocalVarName(for: alloca)
+        case is SSAInstruction:
+            return variableNameMap.getTempName(for: value)
         case let param as BlockParameter:
             return variableNameMap.getTempName(for: param)
         default:
@@ -309,34 +301,11 @@ public final class CFunctionEmitter {
 
     private func getCallArgName(_ value: any SSAValue) -> String {
         // When passing an alloca result (address of a local variable), we need '&local' in C
-        if let result = value as? InstructionResult, result.instruction is AllocaInst {
-            let localName = variableNameMap.getLocalVarName(for: result)
+        if let alloca = value as? AllocaInst {
+            let localName = variableNameMap.getLocalVarName(for: alloca)
             return "&\(localName)"
         }
         return getValueName(value)
-    }
-
-    private func getInstructionResult(_ instruction: any SSAInstruction) -> InstructionResult? {
-        switch instruction {
-        case let alloca as AllocaInst:
-            return alloca.result
-        case let load as LoadInst:
-            return load.result
-        case let binary as BinaryOp:
-            return binary.result
-        case let call as CallInst:
-            return call.result
-        case let cast as CastInst:
-            return cast.result
-        case let unary as UnaryOp:
-            return unary.result
-        case let field as FieldExtractInst:
-            return field.result
-        case let fieldAddr as FieldAddressInst:
-            return fieldAddr.result
-        default:
-            return nil
-        }
     }
 
     private func formatCType(_ type: any TypeProtocol) -> String {
@@ -363,9 +332,8 @@ public final class CFunctionEmitter {
     /// Build a C lvalue expression for a field address path
     private func formatLValue(for fieldAddr: FieldAddressInst) -> String {
         var baseExpr: String
-        if let baseRes = fieldAddr.baseAddress as? InstructionResult,
-           baseRes.instruction is AllocaInst {
-            baseExpr = variableNameMap.getLocalVarName(for: baseRes)
+        if let baseAlloca = fieldAddr.baseAddress as? AllocaInst {
+            baseExpr = variableNameMap.getLocalVarName(for: baseAlloca)
         } else {
             let baseName = getValueName(fieldAddr.baseAddress)
             if fieldAddr.baseAddress.type is PointerType {

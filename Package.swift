@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "NewLang",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.1.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),

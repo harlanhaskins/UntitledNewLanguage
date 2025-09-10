@@ -50,8 +50,8 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
 
     /// Check if an instruction is dead (unused)
     private func isDeadInstruction(_ instruction: any SSAInstruction, in function: SSAFunction) -> Bool {
-        // Instructions without results are considered side-effecting and shouldn't be removed
-        guard let result = instruction.result else {
+        // Instructions that don't produce a value (void-typed) are considered side-effecting
+        if instruction.type is VoidType {
             return false
         }
 
@@ -64,8 +64,8 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
             break
         }
 
-        // Check if the result is used anywhere
-        return !isValueUsed(result, in: function)
+        // Check if the instruction value is used anywhere
+        return !isValueUsed(instruction, in: function)
     }
 
     /// Check if an SSA value is used anywhere in the function
