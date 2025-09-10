@@ -56,7 +56,7 @@
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
-            argument = "--emit-c"
+            argument = "--emit c"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument

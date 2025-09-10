@@ -25,6 +25,9 @@ jobs:
       - name: Add LLVM to PATH
         run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
+      - name: Clean SwiftPM Cache
+        run: swift package clean
+
       - name: Build
         run: swift build -v
 
