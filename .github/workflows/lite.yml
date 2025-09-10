@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lite-tests:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift and Xcode versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Install LLVM (for FileCheck)
+        run: |
+          brew update
+          brew install llvm
+
+      - name: Add LLVM to PATH
+        run: echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: swift build -v
+
+      - name: Run lite test suite
+        run: swift run lite
+
