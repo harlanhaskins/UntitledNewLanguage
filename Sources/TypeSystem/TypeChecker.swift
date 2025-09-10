@@ -33,7 +33,7 @@ public final class TypeChecker: ASTWalker {
 
     private var environment: TypeEnvironment
     private let diagnostics: DiagnosticEngine
-    private var currentStructContext: StructType? = nil
+    private var currentStructContext: StructType?
     private var functionDeclsByName: [String: FunctionDeclaration] = [:]
     private var structDeclsByName: [String: StructDeclaration] = [:]
 
@@ -83,6 +83,7 @@ public final class TypeChecker: ASTWalker {
     }
 
     // MARK: - Pretty operator symbols
+
     private func symbol(_ op: BinaryOperator) -> String {
         switch op {
         case .add: return "+"
@@ -415,7 +416,7 @@ public final class TypeChecker: ASTWalker {
 
         case .logicalAnd, .logicalOr:
             // Logical operations require bool operands and result in bool
-            if leftType is BoolType && rightType is BoolType {
+            if leftType is BoolType, rightType is BoolType {
                 resultType = BoolType()
             } else {
                 diagnostics.invalidBinaryOperands(at: node.range, op: symbol(node.operator), lhs: leftType, rhs: rightType)
@@ -539,7 +540,8 @@ public final class TypeChecker: ASTWalker {
             let gotNonNil = node.arguments.compactMap { $0.label }
             if !expectedNonNil.isEmpty,
                Set(expectedNonNil) == Set(gotNonNil),
-               expectedNonNil != gotNonNil {
+               expectedNonNil != gotNonNil
+            {
                 diagnostics.argumentLabelOrderMismatch(at: node.range, expected: expectedNonNil, got: gotNonNil)
             }
 
@@ -579,7 +581,8 @@ public final class TypeChecker: ASTWalker {
         if let type = environment.lookup(node.name) {
             resultType = type
         } else if let ctx = currentStructContext,
-                  let fieldType = ctx.fields.first(where: { $0.0 == node.name })?.1 {
+                  let fieldType = ctx.fields.first(where: { $0.0 == node.name })?.1
+        {
             // Implicit self.field reference
             resultType = fieldType
         } else {

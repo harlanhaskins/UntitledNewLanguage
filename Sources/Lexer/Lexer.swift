@@ -24,7 +24,7 @@ public final class Lexer {
             if isAtEnd() { break }
 
             // Check for line comments and skip them
-            if peek() == "/" && peekNext() == "/" {
+            if peek() == "/", peekNext() == "/" {
                 skipLineComment()
                 continue
             }
@@ -209,14 +209,14 @@ public final class Lexer {
 
         return foundNewline
     }
-    
+
     private func skipLineComment() {
         // Consume the '//' characters
         advance() // first '/'
         advance() // second '/'
-        
+
         // Skip until end of line or end of file
-        while !isAtEnd() && peek() != "\n" {
+        while !isAtEnd(), peek() != "\n" {
             advance()
         }
         // Don't consume the newline - let the normal whitespace handling deal with it
@@ -243,7 +243,7 @@ public final class Lexer {
         guard !isAtEnd() else { return "\0" }
         return source[current]
     }
-    
+
     private func peekNext() -> Character {
         let nextIndex = source.index(after: current)
         guard nextIndex < source.endIndex else { return "\0" }

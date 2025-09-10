@@ -72,7 +72,7 @@ public final class FieldExtractInst: SSAInstruction {
 /// Compute the address of a nested field path (GEP-like)
 public final class FieldAddressInst: SSAInstruction {
     public let baseAddress: any SSAValue // should be a pointer to a struct
-    public let fieldPath: [String]       // ordered list of field names to traverse
+    public let fieldPath: [String] // ordered list of field names to traverse
     public let type: any TypeProtocol
 
     public var operands: [any SSAValue] { [baseAddress] }
@@ -117,7 +117,7 @@ public final class AllocaInst: SSAInstruction {
     ) {
         self.allocatedType = allocatedType
         self.userProvidedName = userProvidedName
-        self.type = PointerType(pointee: allocatedType)
+        type = PointerType(pointee: allocatedType)
     }
 
     public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
@@ -165,7 +165,7 @@ public final class CastInst: SSAInstruction {
     public init(value: any SSAValue, targetType: any TypeProtocol) {
         self.value = value
         self.targetType = targetType
-        self.type = targetType
+        type = targetType
     }
 
     public func accept<V: SSAFunctionVisitor>(_ visitor: V) -> V.Result {

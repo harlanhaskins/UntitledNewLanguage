@@ -1,5 +1,5 @@
-import Base
 import AST
+import Base
 import Foundation
 import Lexer
 import Parser
@@ -40,7 +40,7 @@ public final class CompilerDriver {
     }
 
     public func compile(inputFile: URL, outputFile: URL) async throws {
-        if !options.verbose && options.emitStage == .none {
+        if !options.verbose, options.emitStage == .none {
             print("=== NEWLANG COMPILER ===")
         }
 
@@ -116,7 +116,7 @@ public final class CompilerDriver {
             // Run optimization passes if -O flag is enabled
             if options.optimize {
                 if options.verbose { print("Running optimization passes") }
-                
+
                 // Additional optimization passes would go here
                 // For now, the -O flag primarily affects C compiler optimizations
             }
@@ -126,7 +126,7 @@ public final class CompilerDriver {
             passManager.runTransformOnAllFunctions(deadCodePass, on: &ssaFunctions)
 
             // Report analysis results
-            if options.emitStage != .c && options.emitStage != .ssa {
+            if options.emitStage != .c, options.emitStage != .ssa {
                 if ssaDiagnostics.hasWarnings {
                     for warning in ssaDiagnostics.warnings {
                         print("Warning: \(warning.message)")
@@ -161,7 +161,7 @@ public final class CompilerDriver {
 
         // Generate C code in proper order: headers, externs, forward declarations, then definitions
         var cCode = ""
-        
+
         // 1. Standard headers
         cCode += cEmitter.generatePreamble()
 
@@ -216,14 +216,14 @@ public final class CompilerDriver {
             "-o", outputFile.path,
             cFile.path,
             "-std=c99",
-            "-Wall"
+            "-Wall",
         ]
-        
+
         // Add optimization flags if requested
         if optimize {
             arguments += ["-O2", "-DNDEBUG"]
         }
-        
+
         let result = try await Subprocess.run(
             .name("clang"),
             arguments: .init(arguments),

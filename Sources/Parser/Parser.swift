@@ -561,7 +561,7 @@ public final class Parser {
                             _ = advance()
                             _ = try consume(.colon, "Expected ':' after argument label")
                             argLabel = name
-                        } else if check(.underscore) && checkAhead(.colon) {
+                        } else if check(.underscore), checkAhead(.colon) {
                             let tok = advance()
                             _ = try consume(.colon, "Expected ':' after '_' in argument")
                             throw ParseError.underscoreArgumentLabelNotAllowed(tok)

@@ -28,7 +28,7 @@ public enum TokenKind: Equatable, Sendable {
     case arrow // ->
     case logicalAnd // &&
     case logicalOr // ||
-    
+
     // Comparison operators
     case equal // ==
     case notEqual // !=

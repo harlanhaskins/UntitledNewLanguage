@@ -216,7 +216,7 @@ public struct StructType: TypeProtocol {
 
     public func isSameType(as other: any TypeProtocol) -> Bool {
         guard let o = other as? StructType else { return false }
-        return self.name == o.name
+        return name == o.name
     }
 
     public func isImplicitlyConvertible(to other: any TypeProtocol) -> Bool {

@@ -32,7 +32,6 @@ struct NewLangCompiler: AsyncParsableCommand {
     @Option(help: "Emit stage: c | ssa | parse | typecheck")
     var emit: String?
 
-
     @Flag(name: .customShort("O"), help: "Enable optimizations (SSA passes and C compiler optimizations)")
     var optimize: Bool = false
 
@@ -69,7 +68,7 @@ struct NewLangCompiler: AsyncParsableCommand {
 
         do {
             let stage: CompilerOptions.EmitStage = {
-                switch (emit?.lowercased()) {
+                switch emit?.lowercased() {
                 case nil: return .none
                 case "c": return .c
                 case "ssa": return .ssa

@@ -24,7 +24,7 @@ public final class UnaryExpression: Expression {
         self.range = range
         self.operator = `operator`
         self.operand = operand
-        self.resolvedType = nil
+        resolvedType = nil
     }
 
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {
@@ -174,7 +174,7 @@ public final class MemberAccessExpression: Expression {
         self.range = range
         self.base = base
         self.member = member
-        self.resolvedType = nil
+        resolvedType = nil
     }
 
     public func accept<W: ASTWalker>(_ walker: W) -> W.Result {

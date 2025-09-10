@@ -41,10 +41,10 @@ public final class BasicBlock: Equatable, SSAVisitable {
         precondition(self.terminator == nil, "Block already has a terminator")
         self.terminator = terminator
     }
-    
+
     /// Clear the terminator for this block (used for replacing terminators)
     public func clearTerminator() {
-        self.terminator = nil
+        terminator = nil
     }
 
     /// Get all successors of this block
@@ -52,7 +52,7 @@ public final class BasicBlock: Equatable, SSAVisitable {
         return terminator?.successors ?? []
     }
 
-    public static func ==(lhs: BasicBlock, rhs: BasicBlock) -> Bool {
+    public static func == (lhs: BasicBlock, rhs: BasicBlock) -> Bool {
         lhs === rhs
     }
 

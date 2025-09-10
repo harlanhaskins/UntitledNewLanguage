@@ -10,11 +10,11 @@ private final class SSAValueToCNameMap {
 
     func getTempName(for value: any SSAValue) -> String {
         let id = ObjectIdentifier(value)
-        
+
         if let existing = valueToName[id] {
             return existing
         }
-        
+
         let name = names.next(for: "t")
         valueToName[id] = name
         return name
@@ -22,7 +22,7 @@ private final class SSAValueToCNameMap {
 
     func getLocalVarName(for value: any SSAValue) -> String {
         let id = ObjectIdentifier(value)
-        
+
         if let existing = valueToName[id] {
             return existing
         }
@@ -44,6 +44,7 @@ private final class SSAValueToCNameMap {
 }
 
 // MARK: - Per-function C emitter
+
 public final class CFunctionEmitter {
     fileprivate var variableNameMap = SSAValueToCNameMap()
     private var ssaNameMap = ValueNameMap()
@@ -70,7 +71,9 @@ public final class CFunctionEmitter {
 
         // Ensure entry block parameters get their names first
         let entryBlockParams = function.blocks.first?.parameters ?? []
-        for param in entryBlockParams { _ = variableNameMap.getTempName(for: param) }
+        for param in entryBlockParams {
+            _ = variableNameMap.getTempName(for: param)
+        }
 
         // Signature with named parameters
         let returnTypeStr = function.name == "main" ? "int" : formatCType(function.returnType)
@@ -84,10 +87,14 @@ public final class CFunctionEmitter {
 
         // Declarations
         let localVars = collectLocalVariables(function)
-        for (type, varName) in localVars { output += "    \(formatCType(type)) \(varName);\n" }
+        for (type, varName) in localVars {
+            output += "    \(formatCType(type)) \(varName);\n"
+        }
 
         let tempVars = collectTempVariables(function)
-        for (type, varName) in tempVars { output += "    \(formatCType(type)) \(varName);\n" }
+        for (type, varName) in tempVars {
+            output += "    \(formatCType(type)) \(varName);\n"
+        }
 
         if !localVars.isEmpty || !tempVars.isEmpty { output += "\n" }
 
@@ -127,10 +134,10 @@ public final class CFunctionEmitter {
                     tempVars.append((param.type, varName))
                 }
             }
-            
+
             // Collect instruction temporaries for non-void, non-alloca/address computations
             for instruction in block.instructions {
-                if !(instruction is AllocaInst) && !(instruction is FieldAddressInst) && !(instruction.type is VoidType) {
+                if !(instruction is AllocaInst), !(instruction is FieldAddressInst), !(instruction.type is VoidType) {
                     let varName = variableNameMap.getTempName(for: instruction)
                     tempVars.append((instruction.type, varName))
                 }
@@ -217,10 +224,12 @@ public final class CFunctionEmitter {
             let valueName = getValueName(cast.value)
             let targetType = formatCType(cast.targetType)
             return "\(resultName) = (\(targetType))\(valueName);"
+
         case let field as FieldExtractInst:
             let resultName = variableNameMap.getTempName(for: field)
             let baseName = getValueName(field.base)
             return "\(resultName) = \(baseName).\(field.fieldName);"
+
         case let fieldAddr as FieldAddressInst:
             // No runtime code for address computation (GEP)
             return "// gep &\(formatLValue(for: fieldAddr))"
@@ -421,6 +430,7 @@ public final class CFunctionEmitter {
 }
 
 // MARK: - Module-level C emitter that orchestrates per-function emitters
+
 public struct CEmitter {
     private var forwardDecls: [String] = []
     private var functionBodies: [String] = []
@@ -481,17 +491,21 @@ public struct CEmitter {
 
         if !forwardDecls.isEmpty {
             output += "// Function forward declarations\n"
-            for decl in forwardDecls { output += decl }
+            for decl in forwardDecls {
+                output += decl
+            }
             output += "\n"
         }
 
-        for body in functionBodies { output += body + "\n" }
+        for body in functionBodies {
+            output += body + "\n"
+        }
         return output
     }
 }
 
 // File-private helper for formatting C types from Types module
-fileprivate func formatCType(_ type: any TypeProtocol) -> String {
+private func formatCType(_ type: any TypeProtocol) -> String {
     switch type {
     case is IntType: return "int64_t"
     case is Int8Type: return "char"
@@ -504,8 +518,9 @@ fileprivate func formatCType(_ type: any TypeProtocol) -> String {
 }
 
 // MARK: - Struct typedef emission
-extension CEmitter {
-    fileprivate func generateStructTypedefs(_ declarations: [any Declaration]) -> String {
+
+private extension CEmitter {
+    func generateStructTypedefs(_ declarations: [any Declaration]) -> String {
         var output = ""
         for decl in declarations {
             guard let s = decl as? StructDeclaration else { continue }

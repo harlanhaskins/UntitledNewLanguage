@@ -149,9 +149,9 @@ public enum ASTPrinter {
         case let bl as BooleanLiteralExpression:
             return "(bool \(bl.value)\(typeSuffix))"
         case let bin as BinaryExpression:
-            return "(bin \(printExpr(bin.left, includeTypes: includeTypes)) \(symbol(bin.`operator`)) \(printExpr(bin.right, includeTypes: includeTypes))\(typeSuffix))"
+            return "(bin \(printExpr(bin.left, includeTypes: includeTypes)) \(symbol(bin.operator)) \(printExpr(bin.right, includeTypes: includeTypes))\(typeSuffix))"
         case let un as UnaryExpression:
-            return "(un \(symbol(un.`operator`)) \(printExpr(un.operand, includeTypes: includeTypes))\(typeSuffix))"
+            return "(un \(symbol(un.operator)) \(printExpr(un.operand, includeTypes: includeTypes))\(typeSuffix))"
         case let call as CallExpression:
             let args = call.arguments.map { arg in
                 let val = printExpr(arg.value, includeTypes: includeTypes)
@@ -162,7 +162,7 @@ public enum ASTPrinter {
         case let mem as MemberAccessExpression:
             return "(member \(printExpr(mem.base, includeTypes: includeTypes)).\(mem.member)\(typeSuffix))"
         case let cast as CastExpression:
-            return "(cast \(printExpr(cast.expression, includeTypes: includeTypes)) as \(cast.targetType.resolvedType?.description ?? "?" )\(typeSuffix))"
+            return "(cast \(printExpr(cast.expression, includeTypes: includeTypes)) as \(cast.targetType.resolvedType?.description ?? "?")\(typeSuffix))"
         default:
             return "(unknown-expr)"
         }

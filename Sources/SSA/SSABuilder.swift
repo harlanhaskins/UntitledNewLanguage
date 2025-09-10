@@ -1,5 +1,5 @@
-import Base
 import AST
+import Base
 import Types
 
 /// Walks an AST and builds an SSA representation that encodes the semantics of the program.
@@ -9,7 +9,7 @@ public final class SSAFunctionBuilder: ASTWalker {
     private var currentBlock: BasicBlock
     private var variableMap: [String: any SSAValue] = [:]
     private let selfStructType: StructType?
-    private var selfParam: (any SSAValue)? = nil
+    private var selfParam: (any SSAValue)?
     private let diagnostics: DiagnosticEngine
 
     init(function: FunctionDeclaration, methodOwner: StructType? = nil, nameOverride: String? = nil, diagnostics: DiagnosticEngine) {
@@ -32,9 +32,9 @@ public final class SSAFunctionBuilder: ASTWalker {
             returnType: returnType
         )
 
-        self.currentFunction = ssaFunc
-        self.currentBlock = ssaFunc.entryBlock
-        self.selfStructType = methodOwner
+        currentFunction = ssaFunc
+        currentBlock = ssaFunc.entryBlock
+        selfStructType = methodOwner
         self.diagnostics = diagnostics
     }
 
@@ -105,7 +105,8 @@ public final class SSAFunctionBuilder: ASTWalker {
                 if ssaValue is BlockParameter { return nil }
                 return ssaValue
             } else if let selfParam = selfParam, let structType = selfStructType,
-                      structType.fields.first(where: { $0.0 == ident.name }) != nil {
+                      structType.fields.first(where: { $0.0 == ident.name }) != nil
+            {
                 let fieldType = ident.resolvedType ?? UnknownType()
                 let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [ident.name], type: PointerType(pointee: fieldType))
                 insert(addrInst)
@@ -188,7 +189,8 @@ public final class SSAFunctionBuilder: ASTWalker {
                 return loadInst
             }
         } else if let selfParam = selfParam, let structType = selfStructType,
-                  structType.fields.first(where: { $0.0 == identifier.name }) != nil {
+                  structType.fields.first(where: { $0.0 == identifier.name }) != nil
+        {
             // Implicit self field load
             let fieldType = identifier.resolvedType ?? UnknownType()
             let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [identifier.name], type: PointerType(pointee: fieldType))
@@ -215,17 +217,18 @@ public final class SSAFunctionBuilder: ASTWalker {
             return ConstantValue(type: type, value: 0)
         }
     }
+
     public typealias Result = (any SSAValue)?
 
     // Declarations (ignored in this context)
-    public func visit(_ node: FunctionDeclaration) -> Result { nil }
-    public func visit(_ node: ExternDeclaration) -> Result { nil }
-    public func visit(_ node: StructDeclaration) -> Result { nil }
+    public func visit(_: FunctionDeclaration) -> Result { nil }
+    public func visit(_: ExternDeclaration) -> Result { nil }
+    public func visit(_: StructDeclaration) -> Result { nil }
 
     // Types (ignored in SSA lowering)
-    public func visit(_ node: NominalTypeNode) -> Result { nil }
-    public func visit(_ node: PointerTypeNode) -> Result { nil }
-    public func visit(_ node: EllipsisTypeNode) -> Result { nil }
+    public func visit(_: NominalTypeNode) -> Result { nil }
+    public func visit(_: PointerTypeNode) -> Result { nil }
+    public func visit(_: EllipsisTypeNode) -> Result { nil }
 
     // Statements (perform effects; return nil)
     public func visit(_ node: VarBinding) -> Result {
@@ -257,7 +260,8 @@ public final class SSAFunctionBuilder: ASTWalker {
             return nil
         }
         if let selfParam = selfParam, let structType = selfStructType,
-           structType.fields.first(where: { $0.0 == node.name }) != nil {
+           structType.fields.first(where: { $0.0 == node.name }) != nil
+        {
             let fieldType = node.value.resolvedType ?? UnknownType()
             let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [node.name], type: PointerType(pointee: fieldType))
             insert(addrInst)
@@ -329,14 +333,18 @@ public final class SSAFunctionBuilder: ASTWalker {
             currentBlock.setTerminator(branch)
 
             currentBlock = thenBlock
-            for stmt in clause.block.statements { _ = stmt.accept(self) }
+            for stmt in clause.block.statements {
+                _ = stmt.accept(self)
+            }
             if currentBlock.terminator == nil {
                 currentBlock.setTerminator(JumpTerm(target: mergeBlock))
             }
             currentBlock = nextBlock
         }
         if let elseBlock = node.elseBlock {
-            for stmt in elseBlock.statements { _ = stmt.accept(self) }
+            for stmt in elseBlock.statements {
+                _ = stmt.accept(self)
+            }
             if currentBlock.terminator == nil {
                 currentBlock.setTerminator(JumpTerm(target: mergeBlock))
             }
@@ -366,12 +374,12 @@ public final class SSAFunctionBuilder: ASTWalker {
                                     falseTarget: continueBlock, falseArguments: [])
             }
             currentBlock.setTerminator(branch)
-            self.currentBlock = continueBlock
+            currentBlock = continueBlock
             let right = node.right.accept(self) ?? ConstantValue(type: BoolType(), value: false)
             if currentBlock.terminator == nil {
                 currentBlock.setTerminator(JumpTerm(target: mergeBlock, arguments: [right]))
             }
-            self.currentBlock = mergeBlock
+            currentBlock = mergeBlock
             return mergeBlock.parameters[0]
         default:
             let left = node.left.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
@@ -393,8 +401,8 @@ public final class SSAFunctionBuilder: ASTWalker {
                 return ConstantValue(type: UnknownType(), value: "error")
             }
             let isComparison = op == .equal || op == .notEqual ||
-            op == .lessThan || op == .lessThanOrEqual ||
-            op == .greaterThan || op == .greaterThanOrEqual
+                op == .lessThan || op == .lessThanOrEqual ||
+                op == .greaterThan || op == .greaterThanOrEqual
             let resultType = node.resolvedType ?? (isComparison ? BoolType() : IntType())
             let binaryInst = BinaryOp(operator: op, left: left, right: right, type: resultType)
             insert(binaryInst)
@@ -495,7 +503,8 @@ public final class SSAFunctionBuilder: ASTWalker {
         }
         if let ident = baseExpr as? IdentifierExpression,
            let baseAddr = variableMap[ident.name],
-           baseAddr.type is PointerType {
+           baseAddr.type is PointerType
+        {
             let fieldType = node.resolvedType ?? UnknownType()
             let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: path, type: PointerType(pointee: fieldType))
             insert(addrInst)
@@ -540,7 +549,7 @@ public final class SSAFunctionBuilder: ASTWalker {
     }
 
     // Parameters (ignored)
-    public func visit(_ node: Parameter) -> Result { nil }
+    public func visit(_: Parameter) -> Result { nil }
 }
 
 /// Builds SSA form from typed AST

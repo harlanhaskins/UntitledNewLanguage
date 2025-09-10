@@ -9,7 +9,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.1.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
-        .package(url: "https://github.com/llvm-swift/lite", branch: "master")
+        .package(url: "https://github.com/llvm-swift/lite", branch: "master"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -60,7 +60,7 @@ let package = Package(
             name: "lite",
             dependencies: [
                 .product(name: "LiteSupport", package: "lite"),
-                "NewLang"
+                "NewLang",
             ]
         ),
     ]

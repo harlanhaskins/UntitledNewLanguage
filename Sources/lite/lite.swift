@@ -22,10 +22,10 @@ struct LiteTestRunner {
                 .appendingPathComponent(".build")
                 .appendingPathComponent("debug")
                 .appendingPathComponent("NewLang")
-            
+
             // Discover FileCheck binary
             let fileCheckBinary = findFileCheck()
-            
+
             print("Looking for tests in: \(testDir.path)")
             print("Using NewLang binary: \(newLangBinary.path)")
             if let fileCheck = fileCheckBinary {
@@ -33,16 +33,16 @@ struct LiteTestRunner {
             } else {
                 print("Warning: FileCheck not found, FileCheck tests will fail")
             }
-            
+
             var substitutions: [(String, String)] = [
                 ("newlang", newLangBinary.path),
-                ("NewLang", newLangBinary.path)
+                ("NewLang", newLangBinary.path),
             ]
-            
+
             if let fileCheck = fileCheckBinary {
                 substitutions.append(("FileCheck", fileCheck))
             }
-            
+
             let allPassed = try await runLite(
                 substitutions: substitutions,
                 pathExtensions: ["nl"],
@@ -51,7 +51,7 @@ struct LiteTestRunner {
                 parallelismLevel: .automatic,
                 successMessage: "All NewLang tests passed! 🎉"
             )
-            
+
             exit(allPassed ? 0 : 1)
         } catch let err as LiteError {
             fputs("error: \(err.message)\n", stderr)
@@ -61,47 +61,48 @@ struct LiteTestRunner {
             exit(1)
         }
     }
-    
+
     /// Find FileCheck binary in common locations
     static func findFileCheck() -> String? {
         let commonPaths = [
             "/usr/local/bin/FileCheck",
-            "/opt/homebrew/bin/FileCheck", 
+            "/opt/homebrew/bin/FileCheck",
             "/opt/homebrew/opt/llvm/bin/FileCheck",
-            "/usr/bin/FileCheck"
+            "/usr/bin/FileCheck",
         ]
-        
+
         // First try common paths
         for path in commonPaths {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
             }
         }
-        
+
         // Then try to find it on PATH using `which`
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
         process.arguments = ["FileCheck"]
-        
+
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe()
-        
+
         do {
             try process.run()
             process.waitUntilExit()
-            
+
             if process.terminationStatus == 0 {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !path.isEmpty {
+                   !path.isEmpty
+                {
                     return path
                 }
             }
         } catch {
             // If `which` fails, continue searching
         }
-        
+
         return nil
     }
 }
