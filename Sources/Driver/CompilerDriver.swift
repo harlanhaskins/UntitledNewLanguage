@@ -4,8 +4,11 @@ import Foundation
 import Lexer
 import Parser
 import SSA
-import Subprocess
 import TypeSystem
+
+#if os(macOS) || os(Linux)
+import Subprocess
+#endif
 
 /// Configuration options for the compiler
 public struct CompilerOptions {
@@ -187,6 +190,7 @@ public final class CompilerDriver {
             print(cCode)
         }
 
+        #if os(macOS) || os(Linux)
         // Step 7: Write C code to temporary file
         let tempCFile = URL(filePath: "/tmp/\(UUID().uuidString).c")
         try cCode.write(to: tempCFile, atomically: true, encoding: String.Encoding.utf8)
@@ -209,8 +213,10 @@ public final class CompilerDriver {
         } else {
             print("✅ Compilation successful! Output: \(outputFile.path)")
         }
+        #endif
     }
 
+    #if os(macOS) || os(Linux)
     private func compileWithClang(cFile: URL, outputFile: URL, optimize: Bool) async throws {
         var arguments = [
             "-o", outputFile.path,
@@ -235,6 +241,7 @@ public final class CompilerDriver {
             throw CompilerError.clangFailed(result.standardError ?? "")
         }
     }
+    #endif
 }
 
 public enum CompilerError: Error, CustomStringConvertible {

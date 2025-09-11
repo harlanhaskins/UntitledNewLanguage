@@ -1,5 +1,5 @@
 import ArgumentParser
-import CompilerDriver
+import Driver
 import Foundation
 
 @main
@@ -35,6 +35,9 @@ struct NewLangCompiler: AsyncParsableCommand {
     @Flag(name: .customShort("O"), help: "Enable optimizations (SSA passes and C compiler optimizations)")
     var optimize: Bool = false
 
+    @Flag(help: "Interpret the source instead of compiling; runs 'main' and prints the result")
+    var interpret: Bool = false
+
     func validate() throws {
         // Check if input file exists
         let fileManager = FileManager.default
@@ -67,6 +70,19 @@ struct NewLangCompiler: AsyncParsableCommand {
         }
 
         do {
+            if interpret {
+                let runner = InterpreterDriver(verbose: verbose)
+                let result = try runner.interpret(inputFile: inputURL)
+                switch result {
+                case .void:
+                    if verbose { print("(void)") }
+                case let .int(v): print(v)
+                case let .int8(v): print(v)
+                case let .int32(v): print(v)
+                case let .bool(v): print(v)
+                }
+                return
+            }
             let stage: CompilerOptions.EmitStage = {
                 switch emit?.lowercased() {
                 case nil: return .none

@@ -52,15 +52,15 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "/Users/harlan/Developer/NewLang/Tests/lite/operator_precedence.nl"
-            isEnabled = "YES">
-         </CommandLineArgument>
-         <CommandLineArgument
-            argument = "--emit c"
+            argument = "--interpret"
             isEnabled = "YES">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "--verbose"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "/Users/harlan/Developer/NewLang/Tests/lite/operator_precedence.nl"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>

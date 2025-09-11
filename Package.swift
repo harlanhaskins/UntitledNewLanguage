@@ -5,7 +5,11 @@ import PackageDescription
 
 let package = Package(
     name: "NewLang",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v15), .iOS(.v18)],
+    products: [
+        .executable(name: "newlang", targets: ["NewLang"]),
+        .library(name: "NewLangDriver", targets: ["Driver"])
+    ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.1.0"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
@@ -17,7 +21,7 @@ let package = Package(
         .executableTarget(
             name: "NewLang",
             dependencies: [
-                "CompilerDriver", "SSA", "Lexer", "Parser", "TypeSystem",
+                "Driver", "SSA", "Lexer", "Parser", "TypeSystem",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
@@ -46,10 +50,20 @@ let package = Package(
             dependencies: ["Base", "AST", "Types"]
         ),
         .target(
-            name: "CompilerDriver",
+            name: "Driver",
             dependencies: [
-                "Lexer", "Base", "AST", "Parser", "TypeSystem", "Types", "SSA",
-                .product(name: "Subprocess", package: "swift-subprocess"),
+                "Lexer",
+                "Base",
+                "AST",
+                "Parser",
+                "TypeSystem",
+                "Types",
+                "SSA",
+                .product(
+                    name: "Subprocess",
+                    package: "swift-subprocess",
+                    condition: .when(platforms: [.macOS])
+                ),
             ]
         ),
         .target(
