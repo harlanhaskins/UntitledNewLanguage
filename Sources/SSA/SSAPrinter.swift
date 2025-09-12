@@ -183,7 +183,18 @@ public enum SSAPrinter {
 
         // Helpers
         private func formatValue(_ value: any SSAValue) -> String {
-            return "\(nameMap.getName(for: value)) : $\(formatType(value.type))"
+            let text = switch value {
+            case let constant as Constant:
+                switch constant.value {
+                case .boolean(let b): "\(b)"
+                case .string(let s): "\"\(s)\""
+                case .integer(let i): "\(i)"
+                case .void: "()"
+                }
+            case is Undef: "undef"
+            default: nameMap.getName(for: value)
+            }
+            return "\(text) : $\(formatType(value.type))"
         }
 
         private func formatType(_ type: any TypeProtocol) -> String {

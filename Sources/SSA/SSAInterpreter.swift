@@ -11,14 +11,16 @@ public final class SSAInterpreter {
         case int8(Int8)
         case int32(Int32)
         case bool(Bool)
+        case string(String)
 
         public var description: String {
             switch self {
             case .void: return "void"
-            case let .int(v): return "Int(\(v))"
-            case let .int8(v): return "Int8(\(v))"
-            case let .int32(v): return "Int32(\(v))"
-            case let .bool(v): return "Bool(\(v))"
+            case let .int(v): return "\(v)"
+            case let .int8(v): return "\(v)"
+            case let .int32(v): return "\(v)"
+            case let .bool(v): return "\(v)"
+            case let .string(s): return "\(s)"
             }
         }
     }
@@ -53,6 +55,24 @@ public final class SSAInterpreter {
         case string(String)
         case pointer(Address)
         case structValue([String: Value])
+
+        init(_ c: Constant) {
+            self = switch c.value {
+            case .void: .void
+            case .boolean(let b): .bool(b)
+            case .integer(let i):
+                switch c.type {
+                case is Int8Type:
+                    .int8(Int8(exactly: i)!)
+                case is Int32Type:
+                    .int32(Int32(exactly: i)!)
+                default:
+                    .int(i)
+                }
+            case .string(let s):
+                .string(s)
+            }
+        }
 
         var description: String {
             switch self {
@@ -125,8 +145,8 @@ public final class SSAInterpreter {
         }
 
         func lookup(_ ssa: any SSAValue) throws -> Value {
-            if let c = ssa as? ConstantValue {
-                return try constToValue(c)
+            if let c = ssa as? Constant {
+                return .init(c)
             }
             if let v = env[ObjectIdentifier(ssa)] {
                 return v
@@ -351,6 +371,7 @@ public final class SSAInterpreter {
                 case let (.int32(a), .int32(b)): return .bool(a == b)
                 case let (.int8(a), .int8(b)): return .bool(a == b)
                 case let (.bool(a), .bool(b)): return .bool(a == b)
+                case let (.string(a), .string(b)): return .bool(a == b)
                 default: throw Error.typeMismatch("== between \(lv) and \(rv)")
                 }
             case .notEqual:
@@ -359,6 +380,7 @@ public final class SSAInterpreter {
                 case let (.int32(a), .int32(b)): return .bool(a != b)
                 case let (.int8(a), .int8(b)): return .bool(a != b)
                 case let (.bool(a), .bool(b)): return .bool(a != b)
+                case let (.string(a), .string(b)): return .bool(a != b)
                 default: throw Error.typeMismatch("!= between \(lv) and \(rv)")
                 }
             case .lessThan:
@@ -366,6 +388,7 @@ public final class SSAInterpreter {
                 case let (.int(a), .int(b)): return .bool(a < b)
                 case let (.int32(a), .int32(b)): return .bool(a < b)
                 case let (.int8(a), .int8(b)): return .bool(a < b)
+                case let (.string(a), .string(b)): return .bool(a < b)
                 default: throw Error.typeMismatch("< between \(lv) and \(rv)")
                 }
             case .lessThanOrEqual:
@@ -373,6 +396,7 @@ public final class SSAInterpreter {
                 case let (.int(a), .int(b)): return .bool(a <= b)
                 case let (.int32(a), .int32(b)): return .bool(a <= b)
                 case let (.int8(a), .int8(b)): return .bool(a <= b)
+                case let (.string(a), .string(b)): return .bool(a <= b)
                 default: throw Error.typeMismatch("<= between \(lv) and \(rv)")
                 }
             case .greaterThan:
@@ -380,6 +404,7 @@ public final class SSAInterpreter {
                 case let (.int(a), .int(b)): return .bool(a > b)
                 case let (.int32(a), .int32(b)): return .bool(a > b)
                 case let (.int8(a), .int8(b)): return .bool(a > b)
+                case let (.string(a), .string(b)): return .bool(a > b)
                 default: throw Error.typeMismatch("> between \(lv) and \(rv)")
                 }
             case .greaterThanOrEqual:
@@ -387,6 +412,7 @@ public final class SSAInterpreter {
                 case let (.int(a), .int(b)): return .bool(a >= b)
                 case let (.int32(a), .int32(b)): return .bool(a >= b)
                 case let (.int8(a), .int8(b)): return .bool(a >= b)
+                case let (.string(a), .string(b)): return .bool(a >= b)
                 default: throw Error.typeMismatch(">= between \(lv) and \(rv)")
                 }
             case .logicalAnd, .logicalOr:
@@ -426,33 +452,14 @@ public final class SSAInterpreter {
                 case let .bool(b): return .bool(b)
                 default: break
                 }
+            case let p as PointerType:
+                if p.pointee is Int8Type, case .string(let string) = v {
+                    return .string(string)
+                }
             default:
                 break
             }
             throw Error.typeMismatch("cannot cast \(v) to \(target)")
-        }
-
-        private func constToValue(_ c: ConstantValue) throws -> Value {
-            switch c.type {
-            case is IntType:
-                if let s = c.value as? String, let i = Int(s) { return .int(i) }
-                if let i = c.value as? Int { return .int(i) }
-            case is Int32Type:
-                if let s = c.value as? String, let i = Int(s) { return .int32(Int32(i)) }
-                if let i = c.value as? Int32 { return .int32(i) }
-            case is Int8Type:
-                if let s = c.value as? String, let i = Int(s) { return .int8(Int8(i)) }
-                if let i = c.value as? Int8 { return .int8(i) }
-            case is BoolType:
-                if let b = c.value as? Bool { return .bool(b) }
-            case is PointerType:
-                // Model string literals as plain strings; other pointers unsupported
-                if let s = c.value as? String { return .string(s) }
-            default:
-                break
-            }
-            // Fallback: unknown constants
-            return .void
         }
 
         private func defaultValue(for type: any TypeProtocol) -> Value {
@@ -469,6 +476,9 @@ public final class SSAInterpreter {
                 return .structValue(fields)
             case let p as PointerType:
                 // Uninitialized pointer; represent as void. Will error if dereferenced.
+                if p.pointee is Int8Type {
+                    return .string("")
+                }
                 return .void
             default:
                 return .void
@@ -483,8 +493,9 @@ public final class SSAInterpreter {
             case let .int32(i): return .int32(i)
             case let .int8(i): return .int8(i)
             case let .bool(b): return .bool(b)
-            default:
-                throw Error.typeMismatch("Return value is not a built-in type: \(v)")
+            case let .string(s): return .string(s)
+            case .pointer(_),  .structValue(_):
+                throw Error.typeMismatch("Return value \(v) is not a builtin value")
             }
         }
 
@@ -495,6 +506,7 @@ public final class SSAInterpreter {
             case let .int8(i): return .int8(i)
             case let .int32(i): return .int32(i)
             case let .bool(b): return .bool(b)
+            case let .string(s): return .string(s)
             }
         }
     }

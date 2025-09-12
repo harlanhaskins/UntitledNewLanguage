@@ -137,7 +137,7 @@ public final class SSAFunctionBuilder: ASTWalker {
         }
 
         if let un = expr as? UnaryExpression, un.operator == .dereference {
-            let ptr = un.operand.accept(self) ?? ConstantValue(type: UnknownType(), value: "error")
+            let ptr = un.operand.accept(self) ?? Undef()
             return ptr
         }
 
@@ -201,7 +201,7 @@ public final class SSAFunctionBuilder: ASTWalker {
         } else {
             // Unknown identifier at lowering time; report and return error value
             diagnostics.ssaCannotComputeAddress(at: identifier.range, type: identifier.resolvedType ?? UnknownType())
-            return ConstantValue(type: identifier.resolvedType ?? UnknownType(), value: "error")
+            return Constant(type: identifier.resolvedType ?? UnknownType(), value: "error")
         }
     }
 
@@ -209,12 +209,12 @@ public final class SSAFunctionBuilder: ASTWalker {
     private func createDefaultValue(for type: any TypeProtocol) -> any SSAValue {
         switch type {
         case is IntType, is Int8Type, is Int32Type:
-            return ConstantValue(type: type, value: 0)
+            return Constant(type: type, value: 0)
         case is BoolType:
-            return ConstantValue(type: type, value: false)
+            return Constant(type: type, value: false)
         default:
             // For unknown types, return 0 as a fallback
-            return ConstantValue(type: type, value: 0)
+            return Constant(type: type, value: 0)
         }
     }
 
@@ -246,7 +246,7 @@ public final class SSAFunctionBuilder: ASTWalker {
         let allocaInst = AllocaInst(allocatedType: varType, userProvidedName: node.name)
         originalBlock.add(allocaInst)
         if let initExpr = node.value {
-            let value = initExpr.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let value = initExpr.accept(self) ?? Undef()
             insert(StoreInst(address: allocaInst, value: value))
         }
         variableMap[node.name] = allocaInst
@@ -255,7 +255,7 @@ public final class SSAFunctionBuilder: ASTWalker {
 
     public func visit(_ node: AssignStatement) -> Result {
         if let address = variableMap[node.name], address.type is PointerType {
-            let value = node.value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let value = node.value.accept(self) ?? Undef()
             insert(StoreInst(address: address, value: value))
             return nil
         }
@@ -265,7 +265,7 @@ public final class SSAFunctionBuilder: ASTWalker {
             let fieldType = node.value.resolvedType ?? UnknownType()
             let addrInst = FieldAddressInst(baseAddress: selfParam, fieldPath: [node.name], type: PointerType(pointee: fieldType))
             insert(addrInst)
-            let value = node.value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let value = node.value.accept(self) ?? Undef()
             insert(StoreInst(address: addrInst, value: value))
             return nil
         }
@@ -277,14 +277,14 @@ public final class SSAFunctionBuilder: ASTWalker {
         let fieldType = node.value.resolvedType ?? UnknownType()
         let addrInst = FieldAddressInst(baseAddress: baseAddr, fieldPath: node.memberPath, type: PointerType(pointee: fieldType))
         insert(addrInst)
-        let value = node.value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+        let value = node.value.accept(self) ?? Undef()
         insert(StoreInst(address: addrInst, value: value))
         return nil
     }
 
     public func visit(_ node: LValueAssignStatement) -> Result {
         if let address = computeAddress(of: node.target) {
-            let value = node.value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let value = node.value.accept(self) ?? Undef()
             insert(StoreInst(address: address, value: value))
         } else {
             let t = (node.target as any Expression).resolvedType ?? UnknownType()
@@ -295,7 +295,7 @@ public final class SSAFunctionBuilder: ASTWalker {
     }
 
     public func visit(_ node: ReturnStatement) -> Result {
-        let returnValue = node.value.map { $0.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown") }
+        let returnValue = node.value.map { $0.accept(self) ?? Undef() }
         currentBlock.setTerminator(ReturnTerm(value: returnValue))
         return nil
     }
@@ -315,7 +315,7 @@ public final class SSAFunctionBuilder: ASTWalker {
     public func visit(_ node: IfStatement) -> Result {
         let mergeBlock = currentFunction.createBlock(name: "merge")
         for (index, clause) in node.clauses.enumerated() {
-            let condition = clause.condition.accept(self) ?? ConstantValue(type: BoolType(), value: false)
+            let condition = clause.condition.accept(self) ?? Constant(type: BoolType(), value: false)
             let thenBlock = currentFunction.createBlock(name: "then")
             let nextBlock: BasicBlock
             if index < node.clauses.count - 1 {
@@ -358,11 +358,11 @@ public final class SSAFunctionBuilder: ASTWalker {
         switch node.operator {
         case .logicalAnd, .logicalOr:
             let isAnd = (node.operator == .logicalAnd)
-            let left = node.left.accept(self) ?? ConstantValue(type: BoolType(), value: false)
+            let left = node.left.accept(self) ?? Constant(type: BoolType(), value: false)
             let opName = isAnd ? "and" : "or"
             let continueBlock = currentFunction.createBlock(name: "\(opName)_continue")
             let mergeBlock = currentFunction.createBlock(name: "\(opName)_merge", parameterTypes: [BoolType()])
-            let shortCircuitValue = ConstantValue(type: BoolType(), value: !isAnd)
+            let shortCircuitValue = Constant(type: BoolType(), value: !isAnd)
             let branch: BranchTerm
             if isAnd {
                 branch = BranchTerm(condition: left,
@@ -375,15 +375,15 @@ public final class SSAFunctionBuilder: ASTWalker {
             }
             currentBlock.setTerminator(branch)
             currentBlock = continueBlock
-            let right = node.right.accept(self) ?? ConstantValue(type: BoolType(), value: false)
+            let right = node.right.accept(self) ?? Constant(type: BoolType(), value: false)
             if currentBlock.terminator == nil {
                 currentBlock.setTerminator(JumpTerm(target: mergeBlock, arguments: [right]))
             }
             currentBlock = mergeBlock
             return mergeBlock.parameters[0]
         default:
-            let left = node.left.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
-            let right = node.right.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let left = node.left.accept(self) ?? Undef()
+            let right = node.right.accept(self) ?? Undef()
             let op: BinaryOp.Operator
             switch node.operator {
             case .add: op = .add
@@ -398,7 +398,7 @@ public final class SSAFunctionBuilder: ASTWalker {
             case .greaterThan: op = .greaterThan
             case .greaterThanOrEqual: op = .greaterThanOrEqual
             default:
-                return ConstantValue(type: UnknownType(), value: "error")
+                return Undef()
             }
             let isComparison = op == .equal || op == .notEqual ||
                 op == .lessThan || op == .lessThanOrEqual ||
@@ -413,18 +413,18 @@ public final class SSAFunctionBuilder: ASTWalker {
     public func visit(_ node: UnaryExpression) -> Result {
         switch node.operator {
         case .negate, .logicalNot:
-            let operand = node.operand.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let operand = node.operand.accept(self) ?? Undef()
             let op: UnaryOp.Operator = (node.operator == .negate) ? .negate : .logicalNot
             let resultType = node.resolvedType ?? operand.type
             let unaryInst = UnaryOp(operator: op, operand: operand, type: resultType)
             insert(unaryInst)
             return unaryInst
         case .dereference:
-            let addressValue = node.operand.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let addressValue = node.operand.accept(self) ?? Undef()
             if !(addressValue.type is PointerType) {
                 let t = (node.operand as any Expression).resolvedType ?? addressValue.type
                 diagnostics.ssaDereferenceNonPointer(at: node.range, type: t)
-                return ConstantValue(type: node.resolvedType ?? UnknownType(), value: "error")
+                return Constant(type: node.resolvedType ?? UnknownType(), value: "error")
             }
             let resultType = node.resolvedType ?? UnknownType()
             let loadInst = LoadInst(address: addressValue, type: resultType)
@@ -436,7 +436,7 @@ public final class SSAFunctionBuilder: ASTWalker {
             } else {
                 let t = (node.operand as any Expression).resolvedType ?? UnknownType()
                 diagnostics.ssaAddressOfNonLValue(at: node.range, type: t)
-                return ConstantValue(type: node.resolvedType ?? UnknownType(), value: "error")
+                return Constant(type: node.resolvedType ?? UnknownType(), value: "error")
             }
         }
     }
@@ -449,12 +449,12 @@ public final class SSAFunctionBuilder: ASTWalker {
                 if let structType = baseType as? StructType {
                     funcName = "\(structType.name)_\(member.member)"
                 }
-                let args: [any SSAValue] = [baseAddr] + node.arguments.map { $0.value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown") }
+                let args: [any SSAValue] = [baseAddr] + node.arguments.map { $0.value.accept(self) ?? Undef() }
                 let resultType = node.resolvedType ?? VoidType()
                 if resultType is VoidType {
                     let callInst = CallInst(function: funcName, arguments: args, type: VoidType())
                     insert(callInst)
-                    return ConstantValue(type: VoidType(), value: ())
+                    return Constant(type: VoidType())
                 } else {
                     let callInst = CallInst(function: funcName, arguments: args, type: resultType)
                     insert(callInst)
@@ -466,18 +466,18 @@ public final class SSAFunctionBuilder: ASTWalker {
         let resultType = node.resolvedType ?? VoidType()
         if isTypeCast(node) {
             guard node.arguments.count == 1 else {
-                return ConstantValue(type: UnknownType(), value: "error")
+                return Undef()
             }
-            let value = node.arguments[0].value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+            let value = node.arguments[0].value.accept(self) ?? Undef()
             let castInst = CastInst(value: value, targetType: resultType)
             insert(castInst)
             return castInst
         } else {
-            let arguments = node.arguments.map { $0.value.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown") }
+            let arguments = node.arguments.map { $0.value.accept(self) ?? Undef() }
             if resultType is VoidType {
                 let callInst = CallInst(function: funcName, arguments: arguments, type: VoidType())
                 insert(callInst)
-                return ConstantValue(type: VoidType(), value: ())
+                return Constant(type: VoidType())
             } else {
                 let callInst = CallInst(function: funcName, arguments: arguments, type: resultType)
                 insert(callInst)
@@ -487,7 +487,7 @@ public final class SSAFunctionBuilder: ASTWalker {
     }
 
     public func visit(_ node: CastExpression) -> Result {
-        let value = node.expression.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+        let value = node.expression.accept(self) ?? Undef()
         let targetType = node.resolvedType ?? IntType()
         let castInst = CastInst(value: value, targetType: targetType)
         insert(castInst)
@@ -512,7 +512,7 @@ public final class SSAFunctionBuilder: ASTWalker {
             insert(loadInst)
             return loadInst
         }
-        var currentValue = baseExpr.accept(self) ?? ConstantValue(type: UnknownType(), value: "unknown")
+        var currentValue = baseExpr.accept(self) ?? Undef()
         var currentType: any TypeProtocol = baseExpr.resolvedType ?? UnknownType()
         for name in path {
             let resultType: any TypeProtocol
@@ -535,17 +535,17 @@ public final class SSAFunctionBuilder: ASTWalker {
 
     public func visit(_ node: IntegerLiteralExpression) -> Result {
         let type = node.resolvedType ?? IntType()
-        return ConstantValue(type: type, value: node.value)
+        return Constant(type: type, value: Int(node.value) ?? 0)
     }
 
     public func visit(_ node: StringLiteralExpression) -> Result {
         let type = node.resolvedType ?? PointerType(pointee: Int8Type())
-        return ConstantValue(type: type, value: node.value)
+        return Constant(type: type, value: node.value)
     }
 
     public func visit(_ node: BooleanLiteralExpression) -> Result {
         let type = node.resolvedType ?? BoolType()
-        return ConstantValue(type: type, value: node.value)
+        return Constant(type: type, value: node.value)
     }
 
     // Parameters (ignored)

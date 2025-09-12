@@ -120,7 +120,7 @@ public final class Lexer {
             } else if char.isLetter {
                 return identifier(start: start)
             } else {
-                fatalError("Unexpected character: \(char)")
+                return makeToken(.unknown(char), start: start)
             }
         }
     }
@@ -133,7 +133,7 @@ public final class Lexer {
         }
 
         if isAtEnd() {
-            fatalError("Unterminated string")
+            return makeToken(.eof, start: start)
         }
 
         let value = String(source[contentStart ..< current])

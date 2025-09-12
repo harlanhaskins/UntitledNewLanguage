@@ -295,7 +295,7 @@ public final class CFunctionEmitter {
 
     private func getValueName(_ value: any SSAValue) -> String {
         switch value {
-        case let constant as ConstantValue:
+        case let constant as Constant:
             return formatConstant(constant)
         case let alloca as AllocaInst:
             return variableNameMap.getLocalVarName(for: alloca)
@@ -384,7 +384,7 @@ public final class CFunctionEmitter {
         }
     }
 
-    private func formatConstant(_ constant: ConstantValue) -> String {
+    private func formatConstant(_ constant: Constant) -> String {
         switch constant.value {
         case let intVal as Int:
             return "\(intVal)"

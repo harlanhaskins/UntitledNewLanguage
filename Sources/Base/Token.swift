@@ -51,4 +51,5 @@ public enum TokenKind: Equatable, Sendable {
 
     // Special
     case eof
+    case unknown(Character)
 }

@@ -18,13 +18,47 @@ public final class BlockParameter: SSAValue {
     }
 }
 
-/// A constant SSA value
-public final class ConstantValue: SSAValue {
+/// An undefined value
+public final class Undef: SSAValue {
     public let type: any TypeProtocol
-    public let value: Any
+    public init(type: any TypeProtocol = UnknownType()) {
+        self.type = type
+    }
+}
 
-    public init(type: any TypeProtocol, value: Any) {
+/// A constant SSA value
+public final class Constant: SSAValue {
+    public enum Value {
+        case integer(Int)
+        case boolean(Bool)
+        case string(String)
+        case void
+    }
+    public let type: any TypeProtocol
+    public let value: Value
+
+    public init(type: any TypeProtocol, value: Value) {
         self.type = type
         self.value = value
+    }
+
+    public init(type: any TypeProtocol, value: String) {
+        self.type = type
+        self.value = .string(value)
+    }
+
+    public init<I: BinaryInteger>(type: any TypeProtocol, value: I) {
+        self.type = type
+        self.value = .integer(Int(value))
+    }
+
+    public init(type: any TypeProtocol, value: Bool) {
+        self.type = type
+        self.value = .boolean(value)
+    }
+
+    public init(type: any TypeProtocol) {
+        self.type = type
+        self.value = .void
     }
 }
