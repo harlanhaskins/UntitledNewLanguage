@@ -1,16 +1,16 @@
 import Types
 
-/// Types that can be visited by an SSAFunctionVisitor implement this.
-public protocol SSAVisitable {
-    func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result
+/// Types that can be visited by an NIRFunctionVisitor implement this.
+public protocol NIRVisitable {
+    func accept<W: NIRFunctionVisitor>(_ walker: W) -> W.Result
 }
 
-/// Visitor protocol mirroring ASTWalker, specialized to SSA IR.
-public protocol SSAFunctionVisitor {
+/// Visitor protocol mirroring ASTWalker, specialized to NIR IR.
+public protocol NIRFunctionVisitor {
     associatedtype Result
 
     // Functions / blocks
-    func visit(_ node: SSAFunction) -> Result
+    func visit(_ node: NIRFunction) -> Result
     func visit(_ node: BasicBlock) -> Result
 
     // Instructions

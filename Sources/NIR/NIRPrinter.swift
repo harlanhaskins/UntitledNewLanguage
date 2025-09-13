@@ -1,13 +1,13 @@
 import Types
 
-/// Maps SSA values to their dynamic names
+/// Maps NIR values to their dynamic names
 public final class ValueNameMap {
     var uniqueNames = UniqueNameMap()
     private var valueToName: [ObjectIdentifier: String] = [:]
 
     public init() {}
 
-    public func getName(for value: any SSAValue) -> String {
+    public func getName(for value: any NIRValue) -> String {
         let id = ObjectIdentifier(value)
 
         if let existing = valueToName[id] {
@@ -19,7 +19,7 @@ public final class ValueNameMap {
             userProvidedName = alloca.userProvidedName
         }
 
-        // All SSA values get sequential numbering
+        // All NIR values get sequential numbering
         let baseName = userProvidedName ?? ""
         var resolved = uniqueNames.next(for: baseName)
         if resolved.isEmpty {
@@ -33,29 +33,29 @@ public final class ValueNameMap {
     }
 }
 
-/// Pretty-prints SSA in a SIL-like format
-public enum SSAPrinter {
-    public static func printFunction(_ function: SSAFunction) -> String {
+/// Pretty-prints NIR in a SIL-like format
+public enum NIRPrinter {
+    public static func printFunction(_ function: NIRFunction) -> String {
         let nameMap = ValueNameMap()
         let printer = Printer(nameMap: nameMap)
         return function.accept(printer)
     }
 
-    public static func printInstruction(_ instruction: any SSAInstruction, nameMap: ValueNameMap) -> String {
+    public static func printInstruction(_ instruction: any NIRInstruction, nameMap: ValueNameMap) -> String {
         let printer = Printer(nameMap: nameMap)
         return instruction.accept(printer)
     }
 
-    // Internal visitor that formats SSA to text
-    private final class Printer: SSAFunctionVisitor {
+    // Internal visitor that formats NIR to text
+    private final class Printer: NIRFunctionVisitor {
         typealias Result = String
 
         let nameMap: ValueNameMap
         init(nameMap: ValueNameMap) { self.nameMap = nameMap }
 
-        func visit(_ node: SSAFunction) -> String {
+        func visit(_ node: NIRFunction) -> String {
             var output = ""
-            output += "ssa @\(node.name) : $("
+            output += "nir @\(node.name) : $("
             let paramTypeStrs = node.parameters.map { formatType($0.type) }
             output += paramTypeStrs.joined(separator: ", ")
             output += ") -> \(formatType(node.returnType)) {\n"
@@ -182,7 +182,7 @@ public enum SSAPrinter {
         }
 
         // Helpers
-        private func formatValue(_ value: any SSAValue) -> String {
+        private func formatValue(_ value: any NIRValue) -> String {
             let text = switch value {
             case let constant as Constant:
                 switch constant.value {

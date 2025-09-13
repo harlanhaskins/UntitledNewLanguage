@@ -23,16 +23,16 @@ struct NewLangCompiler: AsyncParsableCommand {
     @Flag(name: .shortAndLong, help: "Enable verbose output")
     var verbose: Bool = false
 
-    @Flag(help: "Skip SSA analysis passes")
+    @Flag(help: "Skip NIR analysis passes")
     var skipAnalysis: Bool = false
 
     @Flag(help: "Only run analysis passes without generating executable")
     var analyzeOnly: Bool = false
 
-    @Option(help: "Emit stage: c | ssa | parse | typecheck")
+    @Option(help: "Emit stage: c | nir | parse | typecheck")
     var emit: String?
 
-    @Flag(name: .customShort("O"), help: "Enable optimizations (SSA passes and C compiler optimizations)")
+    @Flag(name: .customShort("O"), help: "Enable optimizations (NIR passes and C compiler optimizations)")
     var optimize: Bool = false
 
     @Flag(help: "Interpret the source instead of compiling; runs 'main' and prints the result")
@@ -87,7 +87,7 @@ struct NewLangCompiler: AsyncParsableCommand {
                 switch emit?.lowercased() {
                 case nil: return .none
                 case "c": return .c
-                case "ssa": return .ssa
+                case "nir": return .nir
                 case "parse": return .parse
                 case "typecheck": return .typecheck
                 default:

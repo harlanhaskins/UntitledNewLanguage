@@ -106,7 +106,7 @@ public final class DiagnosticEngine {
     }
 }
 
-// MARK: - SSA Analysis Diagnostic Extensions
+// MARK: - NIR Analysis Diagnostic Extensions
 
 /// Enum for unused variable kinds
 public enum UnusedVariableKind {
@@ -115,16 +115,16 @@ public enum UnusedVariableKind {
 }
 
 public extension DiagnosticEngine {
-    /// SSA analysis specific diagnostic methods
+    /// NIR analysis specific diagnostic methods
 
     func unusedVariable(function: String, type: String, kind: UnusedVariableKind) {
         let defaultRange = SourceRange(start: SourceLocation(line: 0, column: 0, offset: 0), end: SourceLocation(line: 0, column: 0, offset: 0))
 
         switch kind {
         case .uninitialized:
-            warning(at: defaultRange, message: "unused variable of type '\(type)' in function '\(function)' (allocated but never used)", category: "ssa-analysis")
+            warning(at: defaultRange, message: "unused variable of type '\(type)' in function '\(function)' (allocated but never used)", category: "nir-analysis")
         case let .writeOnly(storeCount):
-            warning(at: defaultRange, message: "unused variable of type '\(type)' in function '\(function)' (written \(storeCount) time\(storeCount == 1 ? "" : "s") but never read)", category: "ssa-analysis")
+            warning(at: defaultRange, message: "unused variable of type '\(type)' in function '\(function)' (written \(storeCount) time\(storeCount == 1 ? "" : "s") but never read)", category: "nir-analysis")
         }
     }
 
@@ -140,6 +140,6 @@ public extension DiagnosticEngine {
             summary += " (all write-only)"
         }
 
-        note(at: defaultRange, message: summary, category: "ssa-analysis")
+        note(at: defaultRange, message: summary, category: "nir-analysis")
     }
 }

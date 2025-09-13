@@ -21,7 +21,7 @@ let package = Package(
         .executableTarget(
             name: "NewLang",
             dependencies: [
-                "Driver", "SSA", "Lexer", "Parser", "TypeSystem",
+                "Driver", "NIR", "Lexer", "Parser", "TypeSystem",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
@@ -58,7 +58,7 @@ let package = Package(
                 "Parser",
                 "TypeSystem",
                 "Types",
-                "SSA",
+                "NIR",
                 .product(
                     name: "Subprocess",
                     package: "swift-subprocess",
@@ -67,7 +67,7 @@ let package = Package(
             ]
         ),
         .target(
-            name: "SSA",
+            name: "NIR",
             dependencies: ["Base", "Types", "AST"]
         ),
         .executableTarget(

@@ -2,14 +2,14 @@ import AST
 import Base
 import Types
 
-/// Walks an AST and builds an SSA representation that encodes the semantics of the program.
-public final class SSAFunctionBuilder: ASTWalker {
+/// Walks an AST and builds an NIR representation that encodes the semantics of the program.
+public final class NIRFunctionBuilder: ASTWalker {
     private let function: FunctionDeclaration
-    private let currentFunction: SSAFunction
+    private let currentFunction: NIRFunction
     private var currentBlock: BasicBlock
-    private var variableMap: [String: any SSAValue] = [:]
+    private var variableMap: [String: any NIRValue] = [:]
     private let selfStructType: StructType?
-    private var selfParam: (any SSAValue)?
+    private var selfParam: (any NIRValue)?
     private let diagnostics: DiagnosticEngine
 
     init(function: FunctionDeclaration, methodOwner: StructType? = nil, nameOverride: String? = nil, diagnostics: DiagnosticEngine) {
@@ -25,21 +25,21 @@ public final class SSAFunctionBuilder: ASTWalker {
         // Get return type
         let returnType = function.resolvedReturnType ?? VoidType()
 
-        // Create SSA function
-        let ssaFunc = SSAFunction(
+        // Create NIR function
+        let nirFunc = NIRFunction(
             name: nameOverride ?? function.name,
             parameterTypes: paramTypes,
             returnType: returnType
         )
 
-        currentFunction = ssaFunc
-        currentBlock = ssaFunc.entryBlock
+        currentFunction = nirFunc
+        currentBlock = nirFunc.entryBlock
         selfStructType = methodOwner
         self.diagnostics = diagnostics
     }
 
-    /// Lower a single function declaration to SSA
-    public func lower() -> SSAFunction {
+    /// Lower a single function declaration to NIR
+    public func lower() -> NIRFunction {
         // Map function parameters to block parameters
         var paramIndexOffset = 0
         if selfStructType != nil, !currentFunction.entryBlock.parameters.isEmpty {
@@ -94,12 +94,12 @@ public final class SSAFunctionBuilder: ASTWalker {
 
     // (no parametersNeedingAlloca; we always alloca parameters now)
 
-    private func insert(_ instruction: any SSAInstruction) {
+    private func insert(_ instruction: any NIRInstruction) {
         currentBlock.add(instruction)
     }
 
     /// Compute the address of an lvalue expression, if possible
-    private func computeAddress(of expr: any Expression) -> (any SSAValue)? {
+    private func computeAddress(of expr: any Expression) -> (any NIRValue)? {
         if let ident = expr as? IdentifierExpression {
             if let ssaValue = variableMap[ident.name] {
                 if ssaValue is BlockParameter { return nil }
@@ -174,7 +174,7 @@ public final class SSAFunctionBuilder: ASTWalker {
     }
 
     /// Lower an identifier expression (variable reference)
-    private func materializeIdentifier(_ identifier: IdentifierExpression) -> any SSAValue {
+    private func materializeIdentifier(_ identifier: IdentifierExpression) -> any NIRValue {
         // Check if it's in our variable map
         if let ssaValue = variableMap[identifier.name] {
             // If it's a function parameter (BlockParameter), use it directly
@@ -200,13 +200,13 @@ public final class SSAFunctionBuilder: ASTWalker {
             return loadInst
         } else {
             // Unknown identifier at lowering time; report and return error value
-            diagnostics.ssaCannotComputeAddress(at: identifier.range, type: identifier.resolvedType ?? UnknownType())
+            diagnostics.nirCannotComputeAddress(at: identifier.range, type: identifier.resolvedType ?? UnknownType())
             return Constant(type: identifier.resolvedType ?? UnknownType(), value: "error")
         }
     }
 
     /// Create a default value for a given type (used for unreachable returns)
-    private func createDefaultValue(for type: any TypeProtocol) -> any SSAValue {
+    private func createDefaultValue(for type: any TypeProtocol) -> any NIRValue {
         switch type {
         case is IntType, is Int8Type, is Int32Type:
             return Constant(type: type, value: 0)
@@ -218,14 +218,14 @@ public final class SSAFunctionBuilder: ASTWalker {
         }
     }
 
-    public typealias Result = (any SSAValue)?
+    public typealias Result = (any NIRValue)?
 
     // Declarations (ignored in this context)
     public func visit(_: FunctionDeclaration) -> Result { nil }
     public func visit(_: ExternDeclaration) -> Result { nil }
     public func visit(_: StructDeclaration) -> Result { nil }
 
-    // Types (ignored in SSA lowering)
+    // Types (ignored in NIR lowering)
     public func visit(_: NominalTypeNode) -> Result { nil }
     public func visit(_: PointerTypeNode) -> Result { nil }
     public func visit(_: EllipsisTypeNode) -> Result { nil }
@@ -288,7 +288,7 @@ public final class SSAFunctionBuilder: ASTWalker {
             insert(StoreInst(address: address, value: value))
         } else {
             let t = (node.target as any Expression).resolvedType ?? UnknownType()
-            diagnostics.ssaCannotStore(at: node.range, type: t)
+            diagnostics.nirCannotStore(at: node.range, type: t)
             _ = node.value.accept(self)
         }
         return nil
@@ -423,7 +423,7 @@ public final class SSAFunctionBuilder: ASTWalker {
             let addressValue = node.operand.accept(self) ?? Undef()
             if !(addressValue.type is PointerType) {
                 let t = (node.operand as any Expression).resolvedType ?? addressValue.type
-                diagnostics.ssaDereferenceNonPointer(at: node.range, type: t)
+                diagnostics.nirDereferenceNonPointer(at: node.range, type: t)
                 return Constant(type: node.resolvedType ?? UnknownType(), value: "error")
             }
             let resultType = node.resolvedType ?? UnknownType()
@@ -435,7 +435,7 @@ public final class SSAFunctionBuilder: ASTWalker {
                 return addr
             } else {
                 let t = (node.operand as any Expression).resolvedType ?? UnknownType()
-                diagnostics.ssaAddressOfNonLValue(at: node.range, type: t)
+                diagnostics.nirAddressOfNonLValue(at: node.range, type: t)
                 return Constant(type: node.resolvedType ?? UnknownType(), value: "error")
             }
         }
@@ -449,7 +449,7 @@ public final class SSAFunctionBuilder: ASTWalker {
                 if let structType = baseType as? StructType {
                     funcName = "\(structType.name)_\(member.member)"
                 }
-                let args: [any SSAValue] = [baseAddr] + node.arguments.map { $0.value.accept(self) ?? Undef() }
+                let args: [any NIRValue] = [baseAddr] + node.arguments.map { $0.value.accept(self) ?? Undef() }
                 let resultType = node.resolvedType ?? VoidType()
                 if resultType is VoidType {
                     let callInst = CallInst(function: funcName, arguments: args, type: VoidType())
@@ -553,8 +553,8 @@ public final class SSAFunctionBuilder: ASTWalker {
 }
 
 /// Builds SSA form from typed AST
-public final class SSABuilder {
-    private var currentFunction: SSAFunction?
+public final class NIRBuilder {
+    private var currentFunction: NIRFunction?
     private var currentBlock: BasicBlock?
     public let diagnostics: DiagnosticEngine
 
@@ -562,15 +562,15 @@ public final class SSABuilder {
         self.diagnostics = diagnostics
     }
 
-    /// Lower a list of declarations to SSA functions
-    public func lower(declarations: [any Declaration]) -> [SSAFunction] {
-        var functions: [SSAFunction] = []
+    /// Lower a list of declarations to NIR functions
+    public func lower(declarations: [any Declaration]) -> [NIRFunction] {
+        var functions: [NIRFunction] = []
 
         for declaration in declarations {
             if let funcDecl = declaration as? FunctionDeclaration, !funcDecl.isExtern {
-                let functionBuilder = SSAFunctionBuilder(function: funcDecl, diagnostics: diagnostics)
-                let ssaFunc = functionBuilder.lower()
-                functions.append(ssaFunc)
+                let functionBuilder = NIRFunctionBuilder(function: funcDecl, diagnostics: diagnostics)
+                let nirFunc = functionBuilder.lower()
+                functions.append(nirFunc)
             } else if let structDecl = declaration as? StructDeclaration {
                 // Build owner struct type from fields (resolved types expected after type checking)
                 var fieldTypes: [(String, any TypeProtocol)] = []
@@ -581,9 +581,9 @@ public final class SSABuilder {
                 let ownerType = StructType(name: structDecl.name, fields: fieldTypes)
                 for method in structDecl.methods {
                     let mangledName = "\(structDecl.name)_\(method.name)"
-                    let functionBuilder = SSAFunctionBuilder(function: method, methodOwner: ownerType, nameOverride: mangledName, diagnostics: diagnostics)
-                    let ssaFunc = functionBuilder.lower()
-                    functions.append(ssaFunc)
+                    let functionBuilder = NIRFunctionBuilder(function: method, methodOwner: ownerType, nameOverride: mangledName, diagnostics: diagnostics)
+                    let nirFunc = functionBuilder.lower()
+                    functions.append(nirFunc)
                 }
             }
         }

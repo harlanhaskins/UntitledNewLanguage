@@ -4,7 +4,7 @@
 NewLang is an experimental programming language that compiles to C.
 It is a small, statically typed language with a Swift-like surface syntax,
 boolean and integer arithmetic, structs with methods, and C interop. It uses
-an SSA-based intermediate representation and invokes `clang` to produce executables.
+an NIR-based intermediate representation and invokes `clang` to produce executables.
 
 Note: This is a spiritual successor project to Trill — see https://github.com/trill-lang/trill.
 
@@ -24,8 +24,8 @@ Note: This is a spiritual successor project to Trill — see https://github.com/
 Common options:
 - `-o <path>`: Output executable filename
 - `-v, --verbose`: Verbose pipeline logging
-- `--emit <stage>`: Print an intermediate stage and exit. Stages: `parse`, `typecheck`, `ssa`, `c`
-- `--skip-analysis`: Skip SSA analysis passes
+- `--emit <stage>`: Print an intermediate stage and exit. Stages: `parse`, `typecheck`, `nir`, `c`
+- `--skip-analysis`: Skip NIR analysis passes
 - `--analyze-only`: Run analysis passes only (no codegen)
 - `-O`: Enable optimizations (runs DCE pass and compiles C with `-O2 -DNDEBUG`)
 
@@ -34,8 +34,8 @@ Examples:
   - `swift run newlang hello.nl -o hello && ./hello`
 - Inspect C output:
   - `swift run newlang hello.nl --emit c`
-- Inspect SSA IR:
-  - `swift run newlang hello.nl --emit ssa`
+- Inspect NIR (NewLang Intermediate Represenatation):
+  - `swift run newlang hello.nl --emit nir`
 - Parse or type-check only:
   - `swift run newlang hello.nl --emit parse`
   - `swift run newlang hello.nl --emit typecheck`
@@ -124,7 +124,7 @@ Comments:
 ## Diagnostics and Analysis
 
 - Type checking errors include unknown types/variables, invalid operations, non-boolean conditions, member lookups, and argument label validation.
-- SSA analysis pass detects unused variables and reports:
+- NIR analysis pass detects unused variables and reports:
   - Uninitialized variables
   - Write-only variables (stores without loads)
   - A summary per function
@@ -141,9 +141,8 @@ Comments:
 
 - Parse tree: `--emit parse` prints the AST without types
 - Typed AST: `--emit typecheck` prints AST annotated with types
-- SSA IR: `--emit ssa` prints per-function SSA
+- NIR: `--emit nir` prints per-function NIR
 - C: `--emit c` prints generated C (with headers, externs, typedefs, and definitions)
-
 
 ## Running the Test Suite
 

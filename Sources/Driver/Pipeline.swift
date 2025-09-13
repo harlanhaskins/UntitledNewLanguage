@@ -4,7 +4,7 @@ import Lexer
 import Parser
 import AST
 import TypeSystem
-import SSA
+import NIR
 
 public struct PipelineOptions: Sendable {
     public var optimize: Bool
@@ -22,7 +22,7 @@ public enum PipelineStage: String, Sendable {
     case tokens
     case ast
     case typeChecked
-    case ssa
+    case nir
     case c
 }
 
@@ -30,8 +30,8 @@ public struct PipelineResult {
     public var tokens: [Token]? = nil
     public var ast: [any Declaration]? = nil
     public var typeDiagnostics: DiagnosticEngine? = nil
-    public var ssaFunctions: [SSAFunction]? = nil
-    public var ssaDiagnostics: DiagnosticEngine? = nil
+    public var nirFunctions: [NIRFunction]? = nil
+    public var nirDiagnostics: DiagnosticEngine? = nil
     public var cCode: String? = nil
 }
 
@@ -74,27 +74,27 @@ public enum PipelineRunner {
         if stage == .typeChecked { return result }
         if typeDiagnostics.hasErrors { throw CompilerError.typeCheckingFailed }
 
-        // Lower to SSA
-        if options.verbose { print("[pipeline] lowering to SSA…") }
-        let ssaDiagnostics = DiagnosticEngine()
-        let ssaBuilder = SSABuilder(diagnostics: ssaDiagnostics)
-        var functions = ssaBuilder.lower(declarations: ast)
-        result.ssaDiagnostics = ssaDiagnostics
-        result.ssaFunctions = functions
-        if ssaDiagnostics.hasErrors { throw CompilerError.loweringFailed }
-        if stage == .ssa { return result }
+        // Lower to NIR
+        if options.verbose { print("[pipeline] lowering to NIR…") }
+        let nirDiagnostics = DiagnosticEngine()
+        let nirBuilder = NIRBuilder(diagnostics: nirDiagnostics)
+        var functions = nirBuilder.lower(declarations: ast)
+        result.nirDiagnostics = nirDiagnostics
+        result.nirFunctions = functions
+        if nirDiagnostics.hasErrors { throw CompilerError.loweringFailed }
+        if stage == .nir { return result }
 
         // Analysis/optimization passes (optional)
         if options.runAnalysisPasses {
             if options.verbose { print("[pipeline] analysis passes…") }
-            let passManager = SSAFunctionPassManager()
+            let passManager = NIRFunctionPassManager()
             // Always run dead code elimination + unused variable analysis
             let analysisDiag = DiagnosticEngine()
             let unusedVarPass = UnusedVariableFunctionPass()
             passManager.runAnalysisOnAllFunctions(unusedVarPass, on: &functions, diagnostics: analysisDiag)
             let dce = DeadCodeEliminationPass()
             passManager.runTransformOnAllFunctions(dce, on: &functions)
-            result.ssaFunctions = functions
+            result.nirFunctions = functions
         }
 
         // Emit C

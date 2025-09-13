@@ -1,14 +1,14 @@
 import Types
 
 /// A basic block in SSA form with parameters (replacing traditional phi nodes)
-public final class BasicBlock: Equatable, SSAVisitable {
+public final class BasicBlock: Equatable, NIRVisitable {
     public let name: String
     public var parameters: [BlockParameter]
-    public var instructions: [any SSAInstruction]
+    public var instructions: [any NIRInstruction]
     public var terminator: (any Terminator)?
-    public weak var function: SSAFunction?
+    public weak var function: NIRFunction?
 
-    public init(name: String, parameterTypes: [any TypeProtocol] = [], function: SSAFunction? = nil) {
+    public init(name: String, parameterTypes: [any TypeProtocol] = [], function: NIRFunction? = nil) {
         self.name = name
         self.function = function
         instructions = []
@@ -31,7 +31,7 @@ public final class BasicBlock: Equatable, SSAVisitable {
     }
 
     /// Add an instruction to this block
-    public func add(_ instruction: any SSAInstruction) {
+    public func add(_ instruction: any NIRInstruction) {
         precondition(terminator == nil, "Cannot add instructions after terminator")
         instructions.append(instruction)
     }
@@ -56,24 +56,24 @@ public final class BasicBlock: Equatable, SSAVisitable {
         lhs === rhs
     }
 
-    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result {
+    public func accept<W: NIRFunctionVisitor>(_ walker: W) -> W.Result {
         return walker.visit(self)
     }
 }
 
 /// Base protocol for block terminators (instructions that end a block)
-public protocol Terminator: SSAVisitable {
+public protocol Terminator: NIRVisitable {
     var successors: [BasicBlock] { get }
 }
 
 /// Unconditional jump to another block with arguments
 public final class JumpTerm: Terminator {
     public let target: BasicBlock
-    public let arguments: [any SSAValue]
+    public let arguments: [any NIRValue]
 
     public var successors: [BasicBlock] { [target] }
 
-    public init(target: BasicBlock, arguments: [any SSAValue] = []) {
+    public init(target: BasicBlock, arguments: [any NIRValue] = []) {
         self.target = target
         self.arguments = arguments
 
@@ -82,22 +82,22 @@ public final class JumpTerm: Terminator {
                      "Argument count (\(arguments.count)) must match target parameter count (\(target.parameters.count))")
     }
 
-    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
+    public func accept<W: NIRFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Conditional branch based on a boolean value
 public final class BranchTerm: Terminator {
-    public let condition: any SSAValue
+    public let condition: any NIRValue
     public let trueTarget: BasicBlock
     public let falseTarget: BasicBlock
-    public let trueArguments: [any SSAValue]
-    public let falseArguments: [any SSAValue]
+    public let trueArguments: [any NIRValue]
+    public let falseArguments: [any NIRValue]
 
     public var successors: [BasicBlock] { [trueTarget, falseTarget] }
 
-    public init(condition: any SSAValue,
-                trueTarget: BasicBlock, trueArguments: [any SSAValue] = [],
-                falseTarget: BasicBlock, falseArguments: [any SSAValue] = [])
+    public init(condition: any NIRValue,
+                trueTarget: BasicBlock, trueArguments: [any NIRValue] = [],
+                falseTarget: BasicBlock, falseArguments: [any NIRValue] = [])
     {
         self.condition = condition
         self.trueTarget = trueTarget
@@ -112,18 +112,18 @@ public final class BranchTerm: Terminator {
                      "False branch argument count must match target parameter count")
     }
 
-    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
+    public func accept<W: NIRFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }
 
 /// Return from function
-public final class ReturnTerm: Terminator, SSAVisitable {
-    public let value: (any SSAValue)?
+public final class ReturnTerm: Terminator, NIRVisitable {
+    public let value: (any NIRValue)?
 
     public var successors: [BasicBlock] { [] }
 
-    public init(value: (any SSAValue)? = nil) {
+    public init(value: (any NIRValue)? = nil) {
         self.value = value
     }
 
-    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
+    public func accept<W: NIRFunctionVisitor>(_ walker: W) -> W.Result { walker.visit(self) }
 }

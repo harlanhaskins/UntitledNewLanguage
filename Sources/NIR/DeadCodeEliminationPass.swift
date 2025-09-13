@@ -1,15 +1,15 @@
 import Base
 import Types
 
-/// Transform pass that removes dead/unused variables from SSA functions
-public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
+/// Transform pass that removes dead/unused variables from NIR functions
+public final class DeadCodeEliminationPass: NIRFunctionTransformPass {
     public typealias Result = Void
 
     private var removedCount = 0
 
     public init() {}
 
-    public func transform(_ function: inout SSAFunction) {
+    public func transform(_ function: inout NIRFunction) {
         var didChange = true
         removedCount = 0
 
@@ -24,7 +24,7 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
     }
 
     /// Remove dead instructions and return whether any changes were made
-    private func eliminateDeadInstructions(_ function: inout SSAFunction) -> Bool {
+    private func eliminateDeadInstructions(_ function: inout NIRFunction) -> Bool {
         var changed = false
 
         for block in function.blocks {
@@ -49,7 +49,7 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
     }
 
     /// Check if an instruction is dead (unused)
-    private func isDeadInstruction(_ instruction: any SSAInstruction, in function: SSAFunction) -> Bool {
+    private func isDeadInstruction(_ instruction: any NIRInstruction, in function: NIRFunction) -> Bool {
         // Instructions that don't produce a value (void-typed) are considered side-effecting
         if instruction.type is VoidType {
             return false
@@ -68,8 +68,8 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
         return !isValueUsed(instruction, in: function)
     }
 
-    /// Check if an SSA value is used anywhere in the function
-    private func isValueUsed(_ value: any SSAValue, in function: SSAFunction) -> Bool {
+    /// Check if an NIR value is used anywhere in the function
+    private func isValueUsed(_ value: any NIRValue, in function: NIRFunction) -> Bool {
         for block in function.blocks {
             // Check instructions
             for instruction in block.instructions {
@@ -108,8 +108,8 @@ public final class DeadCodeEliminationPass: SSAFunctionTransformPass {
         return false
     }
 
-    /// Check if two SSA values refer to the same thing
-    private func isSameValue(_ a: any SSAValue, _ b: any SSAValue) -> Bool {
+    /// Check if two NIR values refer to the same thing
+    private func isSameValue(_ a: any NIRValue, _ b: any NIRValue) -> Bool {
         return a === b
     }
 }

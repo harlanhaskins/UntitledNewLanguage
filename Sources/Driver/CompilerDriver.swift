@@ -3,7 +3,7 @@ import Base
 import Foundation
 import Lexer
 import Parser
-import SSA
+import NIR
 import TypeSystem
 
 #if os(macOS) || os(Linux)
@@ -16,7 +16,7 @@ public struct CompilerOptions {
         case none
         case parse
         case typecheck
-        case ssa
+        case nir
         case c
     }
 
@@ -92,29 +92,29 @@ public final class CompilerDriver {
             return
         }
 
-        // Step 5: Lower AST to SSA
-        if options.verbose { print("Step 5: Lowering to SSA") }
-        let ssaLoweringDiagnostics = DiagnosticEngine()
-        let ssaBuilder = SSABuilder(diagnostics: ssaLoweringDiagnostics)
-        var ssaFunctions = ssaBuilder.lower(declarations: ast)
+        // Step 5: Lower AST to NIR
+        if options.verbose { print("Step 5: Lowering to NIR") }
+        let nirLoweringDiagnostics = DiagnosticEngine()
+        let nirBuilder = NIRBuilder(diagnostics: nirLoweringDiagnostics)
+        var nirFunctions = nirBuilder.lower(declarations: ast)
 
-        if ssaLoweringDiagnostics.hasErrors {
-            for error in ssaLoweringDiagnostics.errors {
+        if nirLoweringDiagnostics.hasErrors {
+            for error in nirLoweringDiagnostics.errors {
                 print("Error: \(error)")
             }
             throw CompilerError.loweringFailed
         }
 
-        // Step 5a: Run SSA passes for analysis and optimization
+        // Step 5a: Run NIR passes for analysis and optimization
         if !options.skipAnalysis {
-            if options.verbose { print("Step 5a: Running SSA analysis passes") }
+            if options.verbose { print("Step 5a: Running NIR analysis passes") }
 
-            let passManager = SSAFunctionPassManager()
-            let ssaDiagnostics = DiagnosticEngine()
+            let passManager = NIRFunctionPassManager()
+            let nirDiagnostics = DiagnosticEngine()
 
             // Run unused variable analysis pass
             let unusedVarPass = UnusedVariableFunctionPass()
-            passManager.runAnalysisOnAllFunctions(unusedVarPass, on: &ssaFunctions, diagnostics: ssaDiagnostics)
+            passManager.runAnalysisOnAllFunctions(unusedVarPass, on: &nirFunctions, diagnostics: nirDiagnostics)
 
             // Run optimization passes if -O flag is enabled
             if options.optimize {
@@ -126,15 +126,15 @@ public final class CompilerDriver {
 
             // Always run dead code elimination pass (cleanup pass)
             let deadCodePass = DeadCodeEliminationPass()
-            passManager.runTransformOnAllFunctions(deadCodePass, on: &ssaFunctions)
+            passManager.runTransformOnAllFunctions(deadCodePass, on: &nirFunctions)
 
             // Report analysis results
-            if options.emitStage != .c, options.emitStage != .ssa {
-                if ssaDiagnostics.hasWarnings {
-                    for warning in ssaDiagnostics.warnings {
+            if options.emitStage != .c, options.emitStage != .nir {
+                if nirDiagnostics.hasWarnings {
+                    for warning in nirDiagnostics.warnings {
                         print("Warning: \(warning.message)")
                     }
-                    for note in ssaDiagnostics.allDiagnostics.filter({ $0.severity == .note }) {
+                    for note in nirDiagnostics.allDiagnostics.filter({ $0.severity == .note }) {
                         print("Note: \(note.message)")
                     }
                 } else {
@@ -143,10 +143,10 @@ public final class CompilerDriver {
             }
         }
 
-        // If emit-ssa mode, output SSA and exit
-        if options.emitStage == .ssa {
-            for function in ssaFunctions {
-                print(SSAPrinter.printFunction(function))
+        // If emit-nir mode, output NIR and exit
+        if options.emitStage == .nir {
+            for function in nirFunctions {
+                print(NIRPrinter.printFunction(function))
             }
             return
         }
@@ -157,27 +157,18 @@ public final class CompilerDriver {
             return
         }
 
-        // Step 6: Generate C code from SSA
+        // Step 6: Generate C code from NIR
         if options.verbose { print("Step 6: Generating C code") }
 
         var cEmitter = CEmitter()
 
-        // Generate C code in proper order: headers, externs, forward declarations, then definitions
-        var cCode = ""
-
-        // 1. Standard headers
-        cCode += cEmitter.generatePreamble()
-
-        // 2. Extern function declarations
-        cCode += cEmitter.generateExternDeclarations(ast)
-
         // Add functions to emitter (per-function name maps)
-        for function in ssaFunctions {
+        for function in nirFunctions {
             cEmitter.addFunction(function)
         }
 
         // Build final C code: preamble, externs, forward decls, function bodies
-        cCode += cEmitter.emitModule(declarations: ast)
+        let cCode = cEmitter.emitModule(declarations: ast)
 
         // If emit-c mode, output C code and exit
         if options.emitStage == .c {
@@ -260,7 +251,7 @@ public enum CompilerError: Error, CustomStringConvertible {
         case .typeCheckingFailed:
             return "Type checking failed"
         case .loweringFailed:
-            return "Lowering to SSA failed"
+            return "Lowering to NIR failed"
         case let .parseFailed(msg):
             return "Parse failed: \(msg)"
         }

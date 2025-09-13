@@ -1,9 +1,9 @@
 import Base
 import Types
 
-/// A simple interpreter for SSAFunction that can execute non-extern code and
+/// A simple interpreter for NIRFunction that can execute non-extern code and
 /// return built-in values. External function calls are not supported.
-public final class SSAInterpreter {
+public final class NIRInterpreter {
     // Public result type callers can observe
     public enum BuiltinValue: Equatable, CustomStringConvertible {
         case void
@@ -101,9 +101,9 @@ public final class SSAInterpreter {
         init(_ v: Value) { value = v }
     }
 
-    private var functions: [String: SSAFunction]
+    private var functions: [String: NIRFunction]
 
-    public init(functions: [SSAFunction]) {
+    public init(functions: [NIRFunction]) {
         self.functions = Dictionary(uniqueKeysWithValues: functions.map { ($0.name, $0) })
     }
 
@@ -114,7 +114,7 @@ public final class SSAInterpreter {
         return try run(fn, arguments: arguments)
     }
 
-    public func run(_ function: SSAFunction, arguments: [BuiltinValue] = []) throws -> BuiltinValue {
+    public func run(_ function: NIRFunction, arguments: [BuiltinValue] = []) throws -> BuiltinValue {
         var ctx = ExecutionContext(functions: functions)
         // Map entry parameters
         guard function.parameters.count == arguments.count else {
@@ -130,31 +130,31 @@ public final class SSAInterpreter {
     // MARK: - Execution Context
 
     private final class ExecutionContext {
-        var functions: [String: SSAFunction]
-        // Value environment: SSAValue identity -> concrete Value
+        var functions: [String: NIRFunction]
+        // Value environment: NIRValue identity -> concrete Value
         var env: [ObjectIdentifier: Value] = [:]
         // Memory: root allocation id -> storage
         var memory: [ObjectIdentifier: Storage] = [:]
 
-        init(functions: [String: SSAFunction]) {
+        init(functions: [String: NIRFunction]) {
             self.functions = functions
         }
 
-        func bind(_ ssa: any SSAValue, value: Value) {
-            env[ObjectIdentifier(ssa)] = value
+        func bind(_ nir: any NIRValue, value: Value) {
+            env[ObjectIdentifier(nir)] = value
         }
 
-        func lookup(_ ssa: any SSAValue) throws -> Value {
-            if let c = ssa as? Constant {
+        func lookup(_ nir: any NIRValue) throws -> Value {
+            if let c = nir as? Constant {
                 return .init(c)
             }
-            if let v = env[ObjectIdentifier(ssa)] {
+            if let v = env[ObjectIdentifier(nir)] {
                 return v
             }
-            throw Error.missingValue("\(type(of: ssa))")
+            throw Error.missingValue("\(type(of: nir))")
         }
 
-        func execute(_ function: SSAFunction) throws -> BuiltinValue {
+        func execute(_ function: NIRFunction) throws -> BuiltinValue {
             var current = function.entryBlock
 
             while true {
@@ -216,7 +216,7 @@ public final class SSAInterpreter {
 
         // MARK: Instruction evaluation
 
-        func eval(_ inst: any SSAInstruction) throws -> Value {
+        func eval(_ inst: any NIRInstruction) throws -> Value {
             switch inst {
             case let a as AllocaInst:
                 // Allocate default storage for the allocated type
@@ -269,7 +269,7 @@ public final class SSAInterpreter {
                 }
                 // Gather arguments
                 let args = try call.arguments.map { try toBuiltin(lookup($0)) }
-                let child = SSAInterpreter(functions: Array(functions.values))
+                let child = NIRInterpreter(functions: Array(functions.values))
                 return try fromBuiltin(child.run(callee, arguments: args))
 
             default:

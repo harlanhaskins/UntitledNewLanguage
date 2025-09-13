@@ -1,12 +1,12 @@
 import Types
 
-/// Represents a value in SSA form - could be a parameter, instruction itself, or constant
-public protocol SSAValue: AnyObject {
+/// Represents a value in NIR form - could be a parameter, instruction itself, or constant
+public protocol NIRValue: AnyObject {
     var type: any TypeProtocol { get }
 }
 
 /// A parameter to a basic block (replaces traditional phi nodes)
-public final class BlockParameter: SSAValue {
+public final class BlockParameter: NIRValue {
     public let type: any TypeProtocol
     public let block: BasicBlock
     public let index: Int
@@ -19,15 +19,15 @@ public final class BlockParameter: SSAValue {
 }
 
 /// An undefined value
-public final class Undef: SSAValue {
+public final class Undef: NIRValue {
     public let type: any TypeProtocol
     public init(type: any TypeProtocol = UnknownType()) {
         self.type = type
     }
 }
 
-/// A constant SSA value
-public final class Constant: SSAValue {
+/// A constant NIR value
+public final class Constant: NIRValue {
     public enum Value {
         case integer(Int)
         case boolean(Bool)

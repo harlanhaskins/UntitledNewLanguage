@@ -4,7 +4,7 @@ import Foundation
 import Lexer
 import Parser
 import TypeSystem
-import SSA
+import NIR
 
 public final class InterpreterDriver {
     private let verbose: Bool
@@ -13,7 +13,7 @@ public final class InterpreterDriver {
         self.verbose = verbose
     }
 
-    public func interpret(inputFile: URL) throws -> SSAInterpreter.BuiltinValue {
+    public func interpret(inputFile: URL) throws -> NIRInterpreter.BuiltinValue {
         if verbose { print("Interpreting \(inputFile.path)") }
 
         // 1) Read
@@ -22,7 +22,7 @@ public final class InterpreterDriver {
     }
 
 
-    public func interpret(sourceCode: String) throws -> SSAInterpreter.BuiltinValue {
+    public func interpret(sourceCode: String) throws -> NIRInterpreter.BuiltinValue {
 
         // 2) Lex
         let lexer = Lexer(source: sourceCode)
@@ -47,17 +47,17 @@ public final class InterpreterDriver {
             throw CompilerError.typeCheckingFailed
         }
 
-        // 5) Lower to SSA
-        let ssaDiagnostics = DiagnosticEngine()
-        let ssaBuilder = SSABuilder(diagnostics: ssaDiagnostics)
-        let ssaFunctions = ssaBuilder.lower(declarations: ast)
-        if ssaDiagnostics.hasErrors {
-            for error in ssaDiagnostics.errors { print("Error: \(error)") }
+        // 5) Lower to NIR
+        let nirDiagnostics = DiagnosticEngine()
+        let nirBuilder = NIRBuilder(diagnostics: nirDiagnostics)
+        let nirFunctions = nirBuilder.lower(declarations: ast)
+        if nirDiagnostics.hasErrors {
+            for error in nirDiagnostics.errors { print("Error: \(error)") }
             throw CompilerError.loweringFailed
         }
 
         // 6) Interpret main
-        let interpreter = SSAInterpreter(functions: ssaFunctions)
+        let interpreter = NIRInterpreter(functions: nirFunctions)
         return try interpreter.run(function: "main")
     }
 }

@@ -1,14 +1,14 @@
 import AST
 import Types
 
-/// Maps SSA values to C variable names
-private final class SSAValueToCNameMap {
+/// Maps NIR values to C variable names
+private final class NIRValueToCNameMap {
     private var names = UniqueNameMap()
     private var valueToName: [ObjectIdentifier: String] = [:]
     private var nextTempNumber = 0
     private var nextLocalNumber = 0
 
-    func getTempName(for value: any SSAValue) -> String {
+    func getTempName(for value: any NIRValue) -> String {
         let id = ObjectIdentifier(value)
 
         if let existing = valueToName[id] {
@@ -20,7 +20,7 @@ private final class SSAValueToCNameMap {
         return name
     }
 
-    func getLocalVarName(for value: any SSAValue) -> String {
+    func getLocalVarName(for value: any NIRValue) -> String {
         let id = ObjectIdentifier(value)
 
         if let existing = valueToName[id] {
@@ -37,7 +37,7 @@ private final class SSAValueToCNameMap {
         return name
     }
 
-    func hasName(for value: any SSAValue) -> Bool {
+    func hasName(for value: any NIRValue) -> Bool {
         let id = ObjectIdentifier(value)
         return valueToName[id] != nil
     }
@@ -46,11 +46,11 @@ private final class SSAValueToCNameMap {
 // MARK: - Per-function C emitter
 
 public final class CFunctionEmitter {
-    fileprivate var variableNameMap = SSAValueToCNameMap()
+    fileprivate var variableNameMap = NIRValueToCNameMap()
     private var ssaNameMap = ValueNameMap()
-    private let function: SSAFunction
+    private let function: NIRFunction
 
-    public init(function: SSAFunction) {
+    public init(function: NIRFunction) {
         self.function = function
     }
 
@@ -108,7 +108,7 @@ public final class CFunctionEmitter {
         return output
     }
 
-    private func collectLocalVariables(_ function: SSAFunction) -> [(any TypeProtocol, String)] {
+    private func collectLocalVariables(_ function: NIRFunction) -> [(any TypeProtocol, String)] {
         var localVars: [(any TypeProtocol, String)] = []
 
         for block in function.blocks {
@@ -123,7 +123,7 @@ public final class CFunctionEmitter {
         return localVars
     }
 
-    private func collectTempVariables(_ function: SSAFunction) -> [(any TypeProtocol, String)] {
+    private func collectTempVariables(_ function: NIRFunction) -> [(any TypeProtocol, String)] {
         var tempVars: [(any TypeProtocol, String)] = []
 
         for (index, block) in function.blocks.enumerated() {
@@ -157,7 +157,7 @@ public final class CFunctionEmitter {
 
         // Generate instructions
         for instruction in block.instructions {
-            let ssaComment = SSAPrinter.printInstruction(instruction, nameMap: ssaNameMap)
+            let ssaComment = NIRPrinter.printInstruction(instruction, nameMap: ssaNameMap)
             let cCode = lowerInstruction(instruction)
             output += "    // \(ssaComment)\n"
             output += "    \(cCode)\n"
@@ -171,7 +171,7 @@ public final class CFunctionEmitter {
         return output
     }
 
-    private func lowerInstruction(_ instruction: any SSAInstruction) -> String {
+    private func lowerInstruction(_ instruction: any NIRInstruction) -> String {
         switch instruction {
         case let alloca as AllocaInst:
             // Alloca is handled by variable declaration, no runtime code needed
@@ -293,13 +293,13 @@ public final class CFunctionEmitter {
         }
     }
 
-    private func getValueName(_ value: any SSAValue) -> String {
+    private func getValueName(_ value: any NIRValue) -> String {
         switch value {
         case let constant as Constant:
             return formatConstant(constant)
         case let alloca as AllocaInst:
             return variableNameMap.getLocalVarName(for: alloca)
-        case is SSAInstruction:
+        case is NIRInstruction:
             return variableNameMap.getTempName(for: value)
         case let param as BlockParameter:
             return variableNameMap.getTempName(for: param)
@@ -308,7 +308,7 @@ public final class CFunctionEmitter {
         }
     }
 
-    private func getCallArgName(_ value: any SSAValue) -> String {
+    private func getCallArgName(_ value: any NIRValue) -> String {
         // When passing an alloca result (address of a local variable), we need '&local' in C
         if let alloca = value as? AllocaInst {
             let localName = variableNameMap.getLocalVarName(for: alloca)
@@ -410,7 +410,7 @@ public final class CFunctionEmitter {
         }
     }
 
-    private func formatSSABinaryOp(_ op: BinaryOp.Operator) -> String {
+    private func formatNIRBinaryOp(_ op: BinaryOp.Operator) -> String {
         switch op {
         case .add: return "integer_add"
         case .subtract: return "integer_sub"
@@ -437,7 +437,7 @@ public struct CEmitter {
 
     public init() {}
 
-    public mutating func addFunction(_ function: SSAFunction) {
+    public mutating func addFunction(_ function: NIRFunction) {
         let emitter = CFunctionEmitter(function: function)
         forwardDecls.append(emitter.generateForwardDeclaration())
         functionBodies.append(emitter.generateBody())

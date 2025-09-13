@@ -1,4 +1,4 @@
-// RUN: %newlang %s --emit ssa 2>/dev/null | %FileCheck %s --check-prefixes CHECK-SSA
+// RUN: %newlang %s --emit nir 2>/dev/null | %FileCheck %s --check-prefixes CHECK-NIR
 
 struct Counter {
     var value: Int
@@ -11,6 +11,6 @@ func demo() {
     c.inc(2)
 }
 
-// CHECK-SSA: ssa @Counter_inc
-// CHECK-SSA: ssa @demo
-// CHECK-SSA: apply @Counter_inc(
+// CHECK-NIR: nir @Counter_inc
+// CHECK-NIR: nir @demo
+// CHECK-NIR: apply @Counter_inc(

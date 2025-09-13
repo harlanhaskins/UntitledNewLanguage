@@ -1,1 +1,0 @@
-// This file can be removed - manual test functions replaced with real AST lowering

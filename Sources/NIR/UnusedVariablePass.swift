@@ -2,12 +2,12 @@ import Base
 import Types
 
 /// Function pass that detects unused variables and emits diagnostics
-public final class UnusedVariableFunctionPass: SSAFunctionAnalysisPass {
+public final class UnusedVariableFunctionPass: NIRFunctionAnalysisPass {
     public typealias Result = Void
 
     public init() {}
 
-    public func analyze(_ function: SSAFunction, diagnostics: DiagnosticEngine) {
+    public func analyze(_ function: NIRFunction, diagnostics: DiagnosticEngine) {
         // First, collect all alloca instructions
         var allocas: [(AllocaInst, BasicBlock)] = []
 
@@ -69,7 +69,7 @@ public final class UnusedVariableFunctionPass: SSAFunctionAnalysisPass {
         let loadCount: Int
     }
 
-    private func analyzeVariableUsage(_ variable: any SSAValue, in function: SSAFunction) -> VariableUsage {
+    private func analyzeVariableUsage(_ variable: any NIRValue, in function: NIRFunction) -> VariableUsage {
         var isLoaded = false
         var storeCount = 0
         var loadCount = 0
@@ -107,9 +107,9 @@ public final class UnusedVariableFunctionPass: SSAFunctionAnalysisPass {
         return VariableUsage(isLoaded: isLoaded, storeCount: storeCount, loadCount: loadCount)
     }
 
-    /// Check if two SSA values refer to the same thing
-    private func isSameValue(_ a: any SSAValue, _ b: any SSAValue) -> Bool {
-        // Use object identity for SSA values since they should be unique
+    /// Check if two NIR values refer to the same thing
+    private func isSameValue(_ a: any NIRValue, _ b: any NIRValue) -> Bool {
+        // Use object identity for NIR values since they should be unique
         return a === b
     }
 

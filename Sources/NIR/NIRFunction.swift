@@ -14,8 +14,8 @@ struct UniqueNameMap {
     }
 }
 
-/// Represents a function in SSA form
-public final class SSAFunction {
+/// Represents a function in NIR form
+public final class NIRFunction {
     private var nameMap = UniqueNameMap()
     public let name: String
     public let parameters: [BlockParameter]
@@ -97,7 +97,7 @@ public final class SSAFunction {
         return block
     }
 
-    public func accept<W: SSAFunctionVisitor>(_ walker: W) -> W.Result {
+    public func accept<W: NIRFunctionVisitor>(_ walker: W) -> W.Result {
         return walker.visit(self)
     }
 }
