@@ -80,6 +80,7 @@ struct NewLangCompiler: AsyncParsableCommand {
                 case let .int8(v): print(v)
                 case let .int32(v): print(v)
                 case let .bool(v): print(v)
+                case let .string(s): print(s)
                 }
                 return
             }

@@ -186,9 +186,9 @@ public enum NIRPrinter {
             let text = switch value {
             case let constant as Constant:
                 switch constant.value {
-                case .boolean(let b): "\(b)"
-                case .string(let s): "\"\(s)\""
-                case .integer(let i): "\(i)"
+                case let .boolean(b): "\(b)"
+                case let .string(s): "\"\(s)\""
+                case let .integer(i): "\(i)"
                 case .void: "()"
                 }
             case is Undef: "undef"

@@ -2,12 +2,12 @@ import AST
 import Base
 import Foundation
 import Lexer
-import Parser
 import NIR
+import Parser
 import TypeSystem
 
 #if os(macOS) || os(Linux)
-import Subprocess
+    import Subprocess
 #endif
 
 /// Configuration options for the compiler
@@ -182,56 +182,56 @@ public final class CompilerDriver {
         }
 
         #if os(macOS) || os(Linux)
-        // Step 7: Write C code to temporary file
-        let tempCFile = URL(filePath: "/tmp/\(UUID().uuidString).c")
-        try cCode.write(to: tempCFile, atomically: true, encoding: String.Encoding.utf8)
+            // Step 7: Write C code to temporary file
+            let tempCFile = URL(filePath: "/tmp/\(UUID().uuidString).c")
+            try cCode.write(to: tempCFile, atomically: true, encoding: String.Encoding.utf8)
 
-        if options.verbose {
-            print("Step 7: Writing temporary C file to \(tempCFile.path)")
-        }
+            if options.verbose {
+                print("Step 7: Writing temporary C file to \(tempCFile.path)")
+            }
 
-        // Step 8: Compile C code with clang
-        if options.verbose { print("Step 8: Compiling C to executable") }
-        else { print("Compiling to executable...") }
-        try await compileWithClang(cFile: tempCFile, outputFile: outputFile, optimize: options.optimize)
+            // Step 8: Compile C code with clang
+            if options.verbose { print("Step 8: Compiling C to executable") }
+            else { print("Compiling to executable...") }
+            try await compileWithClang(cFile: tempCFile, outputFile: outputFile, optimize: options.optimize)
 
-        // Step 9: Clean up temp file
-        try FileManager.default.removeItem(at: tempCFile)
+            // Step 9: Clean up temp file
+            try FileManager.default.removeItem(at: tempCFile)
 
-        if options.verbose {
-            print("Step 9: Cleaned up temporary files")
-            print("✅ Compilation successful! Output: \(outputFile.path)")
-        } else {
-            print("✅ Compilation successful! Output: \(outputFile.path)")
-        }
+            if options.verbose {
+                print("Step 9: Cleaned up temporary files")
+                print("✅ Compilation successful! Output: \(outputFile.path)")
+            } else {
+                print("✅ Compilation successful! Output: \(outputFile.path)")
+            }
         #endif
     }
 
     #if os(macOS) || os(Linux)
-    private func compileWithClang(cFile: URL, outputFile: URL, optimize: Bool) async throws {
-        var arguments = [
-            "-o", outputFile.path,
-            cFile.path,
-            "-std=c99",
-            "-Wall",
-        ]
+        private func compileWithClang(cFile: URL, outputFile: URL, optimize: Bool) async throws {
+            var arguments = [
+                "-o", outputFile.path,
+                cFile.path,
+                "-std=c99",
+                "-Wall",
+            ]
 
-        // Add optimization flags if requested
-        if optimize {
-            arguments += ["-O2", "-DNDEBUG"]
+            // Add optimization flags if requested
+            if optimize {
+                arguments += ["-O2", "-DNDEBUG"]
+            }
+
+            let result = try await Subprocess.run(
+                .name("clang"),
+                arguments: .init(arguments),
+                output: .string(limit: 1_000_000, encoding: UTF8.self),
+                error: .string(limit: 1_000_000, encoding: UTF8.self)
+            )
+
+            if !result.terminationStatus.isSuccess {
+                throw CompilerError.clangFailed(result.standardError ?? "")
+            }
         }
-
-        let result = try await Subprocess.run(
-            .name("clang"),
-            arguments: .init(arguments),
-            output: .string(limit: 1_000_000, encoding: UTF8.self),
-            error: .string(limit: 1_000_000, encoding: UTF8.self)
-        )
-
-        if !result.terminationStatus.isSuccess {
-            throw CompilerError.clangFailed(result.standardError ?? "")
-        }
-    }
     #endif
 }
 

@@ -2,15 +2,17 @@ import AST
 import Base
 import Foundation
 import Lexer
+import NIR
 import Parser
 import TypeSystem
-import NIR
 
 public final class InterpreterDriver {
     private let verbose: Bool
+    public let builtins: NIRInterpreter.BuiltinRegistry
 
-    public init(verbose: Bool = false) {
+    public init(verbose: Bool = false, builtins: NIRInterpreter.BuiltinRegistry = NIRInterpreter.BuiltinRegistry()) {
         self.verbose = verbose
+        self.builtins = builtins
     }
 
     public func interpret(inputFile: URL) throws -> NIRInterpreter.BuiltinValue {
@@ -21,9 +23,7 @@ public final class InterpreterDriver {
         return try interpret(sourceCode: sourceCode)
     }
 
-
     public func interpret(sourceCode: String) throws -> NIRInterpreter.BuiltinValue {
-
         // 2) Lex
         let lexer = Lexer(source: sourceCode)
         let tokens = lexer.tokenize()
@@ -43,7 +43,9 @@ public final class InterpreterDriver {
         let typeChecker = TypeChecker(diagnostics: diagnostics)
         typeChecker.typeCheck(declarations: ast)
         if diagnostics.hasErrors {
-            for error in diagnostics.errors { print("Error: \(error)") }
+            for error in diagnostics.errors {
+                print("Error: \(error)")
+            }
             throw CompilerError.typeCheckingFailed
         }
 
@@ -52,12 +54,14 @@ public final class InterpreterDriver {
         let nirBuilder = NIRBuilder(diagnostics: nirDiagnostics)
         let nirFunctions = nirBuilder.lower(declarations: ast)
         if nirDiagnostics.hasErrors {
-            for error in nirDiagnostics.errors { print("Error: \(error)") }
+            for error in nirDiagnostics.errors {
+                print("Error: \(error)")
+            }
             throw CompilerError.loweringFailed
         }
 
         // 6) Interpret main
-        let interpreter = NIRInterpreter(functions: nirFunctions)
+        let interpreter = NIRInterpreter(functions: nirFunctions, builtins: builtins)
         return try interpreter.run(function: "main")
     }
 }

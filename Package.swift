@@ -8,7 +8,7 @@ let package = Package(
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .executable(name: "newlang", targets: ["NewLang"]),
-        .library(name: "NewLangDriver", targets: ["Driver"])
+        .library(name: "NewLangDriver", targets: ["Driver"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.1.0"),

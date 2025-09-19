@@ -49,7 +49,7 @@ struct LiteTestRunner {
                 testDirPath: testDir.path,
                 testLinePrefix: "//",
                 parallelismLevel: .automatic,
-                successmessage: "All NewLang tests passed! 🎉"
+                successMessage: "All NewLang tests passed! 🎉"
             )
 
             exit(allPassed ? 0 : 1)

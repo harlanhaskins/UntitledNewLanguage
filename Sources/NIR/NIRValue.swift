@@ -34,6 +34,7 @@ public final class Constant: NIRValue {
         case string(String)
         case void
     }
+
     public let type: any TypeProtocol
     public let value: Value
 
@@ -59,6 +60,6 @@ public final class Constant: NIRValue {
 
     public init(type: any TypeProtocol) {
         self.type = type
-        self.value = .void
+        value = .void
     }
 }

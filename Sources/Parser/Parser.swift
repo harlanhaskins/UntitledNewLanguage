@@ -789,7 +789,7 @@ extension ParseError: CustomStringConvertible {
         case .else: "else"
         case .true: "true"
         case .false: "false"
-        case .unknown(let char): "\(char)"
+        case let .unknown(char): "\(char)"
         }
     }
 

@@ -1,4 +1,5 @@
 import Base
+import Foundation
 import Types
 
 /// A simple interpreter for NIRFunction that can execute non-extern code and
@@ -25,10 +26,44 @@ public final class NIRInterpreter {
         }
     }
 
+    /// Type alias for builtin function closures
+    public typealias BuiltinFunction = ([BuiltinValue]) throws -> BuiltinValue
+
+    /// Registry for builtin functions that can be called from interpreted code
+    public final class BuiltinRegistry {
+        private var builtins: [String: BuiltinFunction] = [:]
+
+        public init() {}
+
+        /// Register a builtin function with the given name
+        public func register(_ name: String, function: @escaping BuiltinFunction) {
+            builtins[name] = function
+        }
+
+        /// Remove a builtin function
+        public func unregister(_ name: String) {
+            builtins.removeValue(forKey: name)
+        }
+
+        /// Get a builtin function by name
+        func get(_ name: String) -> BuiltinFunction? {
+            return builtins[name]
+        }
+
+        /// Check if a builtin function exists
+        public func contains(_ name: String) -> Bool {
+            return builtins[name] != nil
+        }
+
+        /// Get all registered builtin function names
+        public var registeredNames: [String] {
+            return Array(builtins.keys).sorted()
+        }
+    }
+
     public enum Error: Swift.Error, CustomStringConvertible {
         case unknownFunction(String)
         case invalidArgumentCount(expected: Int, got: Int)
-        case unsupportedExternCall(String)
         case missingValue(String)
         case invalidPointer
         case typeMismatch(String)
@@ -37,7 +72,6 @@ public final class NIRInterpreter {
             switch self {
             case let .unknownFunction(n): return "Unknown function: \(n)"
             case let .invalidArgumentCount(e, g): return "Invalid argument count: expected \(e), got \(g)"
-            case let .unsupportedExternCall(n): return "Extern call not supported: \(n)"
             case let .missingValue(d): return "Missing value: \(d)"
             case .invalidPointer: return "Invalid pointer"
             case let .typeMismatch(d): return "Type mismatch: \(d)"
@@ -59,8 +93,8 @@ public final class NIRInterpreter {
         init(_ c: Constant) {
             self = switch c.value {
             case .void: .void
-            case .boolean(let b): .bool(b)
-            case .integer(let i):
+            case let .boolean(b): .bool(b)
+            case let .integer(i):
                 switch c.type {
                 case is Int8Type:
                     .int8(Int8(exactly: i)!)
@@ -69,7 +103,7 @@ public final class NIRInterpreter {
                 default:
                     .int(i)
                 }
-            case .string(let s):
+            case let .string(s):
                 .string(s)
             }
         }
@@ -102,20 +136,30 @@ public final class NIRInterpreter {
     }
 
     private var functions: [String: NIRFunction]
+    private let builtins: BuiltinRegistry
 
-    public init(functions: [NIRFunction]) {
+    public init(functions: [NIRFunction], builtins: BuiltinRegistry = BuiltinRegistry()) {
         self.functions = Dictionary(uniqueKeysWithValues: functions.map { ($0.name, $0) })
+        self.builtins = builtins
     }
 
     // MARK: - Public API
 
     public func run(function name: String, arguments: [BuiltinValue] = []) throws -> BuiltinValue {
-        guard let fn = functions[name] else { throw Error.unknownFunction(name) }
-        return try run(fn, arguments: arguments)
+        // First try regular functions
+        if let fn = functions[name] {
+            return try run(fn, arguments: arguments)
+        }
+        // Then try builtin functions
+        else if let builtin = builtins.get(name) {
+            return try builtin(arguments)
+        } else {
+            throw Error.unknownFunction(name)
+        }
     }
 
     public func run(_ function: NIRFunction, arguments: [BuiltinValue] = []) throws -> BuiltinValue {
-        var ctx = ExecutionContext(functions: functions)
+        var ctx = ExecutionContext(functions: functions, builtins: builtins)
         // Map entry parameters
         guard function.parameters.count == arguments.count else {
             throw Error.invalidArgumentCount(expected: function.parameters.count, got: arguments.count)
@@ -131,13 +175,15 @@ public final class NIRInterpreter {
 
     private final class ExecutionContext {
         var functions: [String: NIRFunction]
+        var builtins: BuiltinRegistry
         // Value environment: NIRValue identity -> concrete Value
         var env: [ObjectIdentifier: Value] = [:]
         // Memory: root allocation id -> storage
         var memory: [ObjectIdentifier: Storage] = [:]
 
-        init(functions: [String: NIRFunction]) {
+        init(functions: [String: NIRFunction], builtins: BuiltinRegistry) {
             self.functions = functions
+            self.builtins = builtins
         }
 
         func bind(_ nir: any NIRValue, value: Value) {
@@ -263,14 +309,20 @@ public final class NIRInterpreter {
                 return .pointer(Address(root: baseAddr.root, path: baseAddr.path + a.fieldPath))
 
             case let call as CallInst:
-                // No extern calls: require a function with this name
-                guard let callee = functions[call.function] else {
-                    throw Error.unsupportedExternCall(call.function)
+                // First try to find a regular function
+                if let callee = functions[call.function] {
+                    // Regular function call
+                    let args = try call.arguments.map { try toBuiltin(lookup($0)) }
+                    let child = NIRInterpreter(functions: Array(functions.values), builtins: builtins)
+                    return try fromBuiltin(child.run(callee, arguments: args))
+                } else if let builtin = builtins.get(call.function) {
+                    // Builtin function call
+                    let args = try call.arguments.map { try toBuiltin(lookup($0)) }
+                    let result = try builtin(args)
+                    return try fromBuiltin(result)
+                } else {
+                    throw Error.unknownFunction(call.function)
                 }
-                // Gather arguments
-                let args = try call.arguments.map { try toBuiltin(lookup($0)) }
-                let child = NIRInterpreter(functions: Array(functions.values))
-                return try fromBuiltin(child.run(callee, arguments: args))
 
             default:
                 throw Error.missingValue("Unknown instruction: \(type(of: inst))")
@@ -453,7 +505,7 @@ public final class NIRInterpreter {
                 default: break
                 }
             case let p as PointerType:
-                if p.pointee is Int8Type, case .string(let string) = v {
+                if p.pointee is Int8Type, case let .string(string) = v {
                     return .string(string)
                 }
             default:
@@ -494,7 +546,7 @@ public final class NIRInterpreter {
             case let .int8(i): return .int8(i)
             case let .bool(b): return .bool(b)
             case let .string(s): return .string(s)
-            case .pointer(_),  .structValue(_):
+            case .pointer(_), .structValue:
                 throw Error.typeMismatch("Return value \(v) is not a builtin value")
             }
         }

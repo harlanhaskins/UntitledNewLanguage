@@ -1,10 +1,10 @@
-import Foundation
-import Base
-import Lexer
-import Parser
 import AST
-import TypeSystem
+import Base
+import Foundation
+import Lexer
 import NIR
+import Parser
+import TypeSystem
 
 public struct PipelineOptions: Sendable {
     public var optimize: Bool
@@ -105,10 +105,11 @@ public enum PipelineRunner {
         var cCode = ""
         cCode += emitter.generatePreamble()
         cCode += emitter.generateExternDeclarations(ast)
-        for f in functions { emitter.addFunction(f) }
+        for f in functions {
+            emitter.addFunction(f)
+        }
         cCode += emitter.emitModule(declarations: ast)
         result.cCode = cCode
         return result
     }
 }
-
