@@ -3,12 +3,15 @@
 
 // CHECK: nir @test : $(Int) -> Int {
 // CHECK: entry(%{{[0-9]+}} : $Int):
-// CHECK: %{{[0-9]+}} = integer_gt %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
+// CHECK: %{{[a-z]+}} = alloca $Int
+// CHECK: store %{{[0-9]+}} : $Int to %{{[a-z]+}} : $*Int
+// CHECK: %{{[0-9]+}} = load %{{[a-z]+}} : $*Int
+// CHECK: %{{[0-9]+}} = integer_gt %{{[0-9]+}} : $Int, {{[0-9]+|%[0-9]+}} : $Int
 // CHECK: cond_br %{{[0-9]+}} : $Bool, then, merge
 // CHECK: merge:
-// CHECK: return %{{[0-9]+}} : $Int
+// CHECK: return {{[0-9]+|%[0-9]+}} : $Int
 // CHECK: then:
-// CHECK: return %{{[0-9]+}} : $Int
+// CHECK: return {{[0-9]+|%[0-9]+}} : $Int
 
 func test(_ x: Int) -> Int {
     if x > 5 {

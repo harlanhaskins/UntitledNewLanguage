@@ -386,27 +386,15 @@ public final class CFunctionEmitter {
 
     private func formatConstant(_ constant: Constant) -> String {
         switch constant.value {
-        case let intVal as Int:
+        case .integer(let intVal):
             return "\(intVal)"
-        case let floatVal as Float:
-            return "\(floatVal)"
-        case let doubleVal as Double:
-            return "\(doubleVal)"
-        case let boolVal as Bool:
+        case .boolean(let boolVal):
             return boolVal ? "true" : "false"
-        case let stringVal as String:
-            // Check if this is a string literal or an integer literal
-            if constant.type is PointerType {
-                // This is a string literal, wrap in quotes
-                return "\"\(stringVal)\""
-            } else {
-                // This is an integer literal stored as string
-                return stringVal
-            }
-        default:
-            // Debug: print what we got
-            print("DEBUG: Unknown constant value type: \(type(of: constant.value)), value: \(constant.value)")
-            return "0" // fallback
+        case .string(let stringVal):
+            // String literals should be wrapped in quotes
+            return "\"\(stringVal)\""
+        case .void:
+            return "/* void */"
         }
     }
 

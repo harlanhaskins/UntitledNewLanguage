@@ -119,21 +119,25 @@ func main() -> Int32 {
 }
 
 // CHECK-C: int64_t testArithmeticPrecedence(int64_t t, int64_t t1, int64_t t2) {
-// CHECK-C:     // %{{[0-9]+}} = integer_mul %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
-// CHECK-C:     =
-// CHECK-C:     // %{{[0-9]+}} = integer_add %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
-// CHECK-C:     =
-// CHECK-C:     result1 =
-// CHECK-C: }
+// CHECK-C:     int64_t x;
+// CHECK-C:     int64_t y;
+// CHECK-C:     int64_t z;
+// CHECK-C:     int64_t result1;
+// CHECK-C:     // %{{[0-9]+}} = integer_mul
+// CHECK-C:     {{t[0-9]+}} = {{t[0-9]+}} * {{t[0-9]+}};
+// CHECK-C:     // %{{[0-9]+}} = integer_add
+// CHECK-C:     {{t[0-9]+}} = {{t[0-9]+}} + {{t[0-9]+}};
 
 // CHECK-C: bool testComparisonPrecedence(int64_t t, int64_t t1) {
-// CHECK-C:     // %{{[0-9]+}} = integer_add %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
+// CHECK-C:     int64_t x;
+// CHECK-C:     int64_t y;
+// CHECK-C:     bool result1;
+// CHECK-C:     // %{{[0-9]+}} = integer_add %{{[0-9]+}} : $Int, 5 : $Int
 // CHECK-C:     {{t[0-9]+}} = {{t[0-9]+}} + 5;
-// CHECK-C:     // %{{[0-9]+}} = integer_mul %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
+// CHECK-C:     // %{{[0-9]+}} = integer_mul %{{[0-9]+}} : $Int, 2 : $Int
 // CHECK-C:     {{t[0-9]+}} = {{t[0-9]+}} * 2;
-// CHECK-C:     // %{{[0-9]+}} = integer_gt %{{[0-9]+}} : $Int, %{{[0-9]+}} : $Int
+// CHECK-C:     // %{{[0-9]+}} = integer_gt
 // CHECK-C:     {{t[0-9]+}} = {{t[0-9]+}} > {{t[0-9]+}};
-// CHECK-C: }
 
 // This test verifies that NewLang correctly parses operator precedence:
 // 1. * and / have higher precedence than + and -
